@@ -15,7 +15,6 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 
-// inspired from http://lcamtuf.coredump.cx/oldtcp/tcpseq.html
 // http://www.mpipks-dresden.mpg.de/~tisean/TISEAN_2.1/docs/chaospaper/node6.html
 
 #include <stdlib.h>
@@ -29,19 +28,17 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #include <GL/glu.h>
 #include <GL/glut.h>
 
-#define WINDOW_TITLE_PREFIX "My OpenGL program"
+#define WINDOW_TITLE_PREFIX "visChaos3d"
 #define couleur(param) printf("\033[%sm",param)
 
-static short winSizeW = 800,
-	winSizeH = 600,
+static short winSizeW = 920,
+	winSizeH = 690,
 	frame = 0,
 	currentTime = 0,
 	timebase = 0,
 	fullScreen = 0,
 	rotate = 0,
 	dt = 5; // in milliseconds
-
-static double zMax = 0, zMin = 0, decal = 0;
 
 static int textList = 0,
 	objectList = 0,
@@ -53,26 +50,26 @@ static float fps = 0.0,
 	roty = 0.0,
 	rotz = 20.0,
 	xx = 0.0,
-	yy = 4.0,
+	yy = 5.0,
 	zoom = 100.0,
 	prevx = 0.0,
-	prevy = 0.0;
+	prevy = 0.0,
+	sphereRadius = 0.6,
+	squareWidth = 0.055;
+
+static double zMax = 0,
+	zMin = 0,
+	decal = 0;
 
 typedef struct _point {
-	double x;
-	double y;
-	double z;
-	double r;
-	double g;
-	double b;
+	GLfloat x, y, z;
+	GLfloat r, g, b;
 } point;
 
 static point *pointsList = NULL;
 
 static unsigned long iterations = 0,
-	seuil = 70000;
-
-static float *vertices = NULL;
+	seuil = 60000;
 
 
 
@@ -94,7 +91,7 @@ void takeScreenshot(char *filename) {
 	int height = glutGet(GLUT_WINDOW_HEIGHT);
 	png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
 	png_infop info = png_create_info_struct(png);
-	png_byte buffer[width * height * 3];
+	unsigned char *buffer = calloc((width * height * 3), sizeof(unsigned char));
 	int i;
 
 	glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, (GLvoid *)buffer);
@@ -106,33 +103,48 @@ void takeScreenshot(char *filename) {
 	}
 	png_write_end(png, NULL);
 	png_destroy_write_struct(&png, &info);
+	free(buffer);
 	fclose(fp);
 	printf("INFO: Save screenshot on %s (%d x %d)\n", filename, width, height);
 }
 
 
-void drawPoint(point c) {
+void drawPoint(point p) {
 	glPointSize(1.0);
+	glColor3f(p.r, p.g, p.b);
 	glBegin(GL_POINTS);
-	glNormal3f(c.x, c.y, c.z);
-	glVertex3f(c.x, c.y, c.z-decal);
+	glNormal3f(p.x, p.y, p.z);
+	glVertex3f(p.x, p.y, p.z);
 	glEnd();
 }
 
 
-void drawSphere(point c) {
-	glTranslatef(c.x, c.y, c.z-decal);
-	glutSolidSphere(0.2, 4, 4);
+void drawSphere(point p) {
+	glColor3f(p.r, p.g, p.b);
+	glTranslatef(p.x, p.y, p.z);
+	glutSolidSphere(sphereRadius, 8, 8);
 }
 
 
-void drawLine(point c1, point c2){
+void drawSquare(point p) {
+	glColor3f(p.r, p.g, p.b);
+	glTranslatef(p.x, p.y, p.z);
+	glBegin(GL_QUADS);
+	glVertex3f(-squareWidth, -squareWidth, 0.0); // Bottom left corner
+	glVertex3f(-squareWidth, squareWidth, 0.0); // Top left corner
+	glVertex3f(squareWidth, squareWidth, 0.0); // Top right corner
+	glVertex3f(squareWidth, -squareWidth, 0.0); // Bottom right corner
+	glEnd();
+}
+
+
+void drawLine(point p1, point p2){
 	glLineWidth(1.0);
 	glBegin(GL_LINES);
-	glColor3f(c1.r, c1.g, c1.b);
-	glNormal3f(c1.x, c1.y, c1.z-decal);
-	glVertex3f(c1.x, c1.y, c1.z-decal);
-	glVertex3f(c2.x, c2.y, c2.z-decal);
+	glColor3f(p1.r, p1.g, p1.b);
+	glNormal3f(p1.x, p1.y, p1.z);
+	glVertex3f(p1.x, p1.y, p1.z);
+	glVertex3f(p2.x, p2.y, p2.z);
 	glEnd();
 }
 
@@ -140,6 +152,12 @@ void drawLine(point c1, point c2){
 void drawString(float x, float y, float z, char *text) {
 	unsigned i = 0;
 	glPushMatrix();
+	glLineWidth(1.0);
+	if (background){ // White background
+		glColor3f(0.0, 0.0, 0.0);
+	} else { // Black background
+		glColor3f(1.0, 1.0, 1.0);
+	}
 	glTranslatef(x, y, z);
 	glScalef(0.01, 0.01, 0.01);
 	for(i=0; i < strlen(text); i++) {
@@ -151,12 +169,10 @@ void drawString(float x, float y, float z, char *text) {
 
 void drawText(void) {
 	char text1[50], text2[70];
-	sprintf(text1, "Michel Dubois (c) 2014, dt: %1.3f, FPS: %4.2f", (dt/1000.0), fps);
+	sprintf(text1, "dt: %1.3f, FPS: %4.2f", (dt/1000.0), fps);
 	sprintf(text2, "Nbr itérations: %ld, zMin: %f, zMax: %f", iterations, floor(zMin), floor(zMax));
 	textList = glGenLists(1);
 	glNewList(textList, GL_COMPILE);
-	glLineWidth(1.0);
-	glColor3f(1.0, 1.0, 1.0);
 	drawString(-40.0, -40.0, -100.0, text1);
 	drawString(-40.0, -38.0, -100.0, text2);
 	glEndList();
@@ -174,24 +190,16 @@ void drawAxes(void) {
 
 
 void drawObject(void) {
-	unsigned long i, cpt=0;
-	if (iterations >= seuil) {
-		vertices = calloc((iterations*3 + iterations*3), sizeof(float));
-		for (i=0; i<iterations; i++) {
-			vertices[cpt] = pointsList[i].x;
-			vertices[cpt+1] = pointsList[i].y;
-			vertices[cpt+2] = pointsList[i].z-decal;
-			vertices[cpt+3] = pointsList[i].r;
-			vertices[cpt+4] = pointsList[i].g;
-			vertices[cpt+5] = pointsList[i].b;
-			cpt+=6;
-		}
-	} else {
+	unsigned long i;
+	for (i=0; i<iterations; i++) {
+		pointsList[i].z = pointsList[i].z - decal;
+	}
+	if (iterations <= seuil) {
 		objectList = glGenLists(1);
 		glNewList(objectList, GL_COMPILE_AND_EXECUTE);
 		for (i=1; i<iterations; i++) {
 			glPushMatrix();
-			glColor3f(pointsList[i].r, pointsList[i].g, pointsList[i].b);
+			//drawLine(pointsList[i-1], pointsList[i]);
 			drawSphere(pointsList[i]);
 			glPopMatrix();
 		}
@@ -378,8 +386,8 @@ void display(void) {
 	if (iterations >= seuil) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
-		glVertexPointer(3, GL_FLOAT, (3+3)*sizeof(vertices[0]), vertices);
-		glColorPointer(3, GL_FLOAT, (3+3)*sizeof(vertices[0]), &vertices[3]);
+		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
+		glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
 		glDrawArrays(GL_POINTS, 0, iterations);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
@@ -394,6 +402,12 @@ void display(void) {
 
 
 void init(void) {
+	if (background){ // White background
+		glClearColor(1.0, 1.0, 1.0, 1.0);
+	} else { // Black background
+		glClearColor(0.1, 0.1, 0.1, 1.0);
+	}
+
 	GLfloat position[] = {0.0, 0.0, 0.0, 1.0};
 	glLightfv(GL_LIGHT0, GL_POSITION, position);
 
@@ -422,12 +436,6 @@ void init(void) {
 	glEnable(GL_AUTO_NORMAL);
 	glDepthFunc(GL_LESS);
 
-	// définition de la couler de fond
-	if (background){
-		glClearColor(1.0, 1.0, 1.0, 1.0);
-	} else {
-		glClearColor(0.1, 0.1, 0.1, 1.0);
-	}
 	drawObject();
 }
 
@@ -435,7 +443,7 @@ void init(void) {
 void glmain(int argc, char *argv[]) {
 	glutInit(&argc, argv);
 	glutInitWindowSize(winSizeW, winSizeH);
-	glutInitWindowPosition(100, 100);
+	glutInitWindowPosition(120, 10);
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
 	init();
@@ -448,13 +456,15 @@ void glmain(int argc, char *argv[]) {
 	glutKeyboardFunc(onKeyboard);
 	glutTimerFunc(dt, onTimer, 0);
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
+	fprintf(stdout, "INFO: Min: %.02lf, Max: %.02lf\n", zMin, zMax);
+	fprintf(stdout, "INFO: Nbr elts: %ld\n", iterations);
 	glutMainLoop();
 	glDeleteLists(textList, 1);
 	glDeleteLists(objectList, 1);
 }
 
 
-void hsv2rgb(double h, double s, double v, double *r, double *g, double *b) {
+void hsv2rgb(double h, double s, double v, GLfloat *r, GLfloat *g, GLfloat *b) {
 	double hp = h * 6;
 	if ( hp == 6 ) hp = 0;
 	int i = floor(hp);
