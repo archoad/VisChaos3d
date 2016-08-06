@@ -1,6 +1,6 @@
 # définition des cibles particulières
 .PHONY: clean, mrproper
-  
+
 # désactivation des règles implicites
 .SUFFIXES:
 
@@ -8,7 +8,7 @@ UNAME_S:=$(shell uname -s)
 
 CC=gcc
 CL=clang
-CFLAGS= -O3 -Wall -W -Wstrict-prototypes -Werror
+CFLAGS= -O3 -Wall -W -Wstrict-prototypes -Werror -Wextra -Wuninitialized
 ifeq ($(UNAME_S),Linux)
 	IFLAGSDIR= -I/usr/include
 	LFLAGSDIR= -L/usr/lib
@@ -23,13 +23,18 @@ GL_FLAGS= -lGL -lGLU -lglut
 MATH_FLAGS= -lm
 PNG_FLAGS= -lpng
 
-all: dest_sys visChaos3d
+all: dest_sys visChaos3d visMandel3d
 
 visChaos3d: visChaos3d.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(MATH_FLAGS) $(PNG_FLAGS) $< -o $@
+
+visMandel3d: visMandel3d.c
+	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(MATH_FLAGS) $(PNG_FLAGS) $< -o $@
+
 
 dest_sys:
 	@echo "Destination system:" $(UNAME_S)
 
 clean:
 	@rm -f visChaos3d
+	@rm -f visMandel3d
