@@ -19,17 +19,21 @@ ifeq ($(UNAME_S),Darwin)
 	LFLAGSDIR= -L/opt/local/lib
 	COMPIL=$(CL)
 endif
-GL_FLAGS= -lGL -lGLU -lglut
+GL_FLAGS= -lGL -lGLU -lglut -lGLEW
 MATH_FLAGS= -lm
 PNG_FLAGS= -lpng
 
-all: dest_sys visChaos3d visMandel3d
+all: dest_sys visChaos3d visFractal3d test
 
 visChaos3d: visChaos3d.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(MATH_FLAGS) $(PNG_FLAGS) $< -o $@
 
-visMandel3d: visMandel3d.c
+visFractal3d: visFractal3d.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(MATH_FLAGS) $(PNG_FLAGS) $< -o $@
+
+test: test.c
+	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(MATH_FLAGS) $(PNG_FLAGS) $< -o $@
+
 
 
 dest_sys:
@@ -37,4 +41,5 @@ dest_sys:
 
 clean:
 	@rm -f visChaos3d
-	@rm -f visMandel3d
+	@rm -f visFractal3d
+	@rm -f test
