@@ -15,6 +15,10 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 
+
+// tutorial openGL http://www-evasion.imag.fr/Membres/Antoine.Bouthors/teaching/opengl/
+
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,14 +41,21 @@ static short winSizeW = 920,
 	fullScreen = 0,
 	rotate = 0,
 	rotColor = 0,
+	rotJulia = 0,
 	flat = 0,
+	saturation = 1,
+	mandelbulb = 0,
+	mandelbrot = 0,
+	julia = 0,
 	dt = 20; // in milliseconds
 
 static int textList = 0,
 	cpt = 0,
 	background = 0,
-	maxIter = 20,
-	sideLength = 0;
+	maxIter = 0,
+	sideLength = 0,
+	winPosx = 20,
+	winPosy = 20;
 
 static float fps = 0.0,
 	rotx = -80.0,
@@ -57,11 +68,14 @@ static float fps = 0.0,
 	prevy = 0.0;
 
 static double pas=0.0,
-	winSize = 10.0,
-	winPosx = 0.0, winPosz = 0.0,
 	xmin=0.0, xmax=0.0,
-	zmin=0.0, zmax=0.0,
-	power=0;
+	ymin=0.0, ymax=0.0,
+	cx=0.0, cy=0.0,
+	power=0.0,
+	cr=0, ci=0,
+	juliaA=0.0,
+	juliaR=0.7885,
+	pi=3.14159265359;
 
 typedef struct _vector {
 	float x, y, z;
@@ -72,11 +86,25 @@ typedef struct _point {
 	GLfloat r, g, b;
 } point;
 
+static float *colorsList = NULL;
+
 static point *pointsList = NULL;
 
 static unsigned long iterations = 0;
 
+static GLuint textureID;
 
+
+
+
+void usage(void) {
+	couleur("31");
+	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
+	couleur("0");
+	printf("Syntaxe: visFractal3d <fractal> <background color>\n");
+	printf("\t<fractal> -> 'mandelbrot', 'julia' or 'mandelbulb'\n");
+	printf("\t<background color> -> 'white' or 'black'\n");
+}
 
 
 vector rgb2hsv(float r, float g, float b) {
@@ -113,26 +141,72 @@ void hsv2rgb(float h, float s, float v, GLfloat *r, GLfloat *g, GLfloat *b) {
 }
 
 
-int mandelbrot(float x0, float y0, int iMax) {
-	// how many iterations we need to get infinity
-	double x=0.0, y=0.0, xn=0.0, yn=0.0;
-	int i=0;
-	x = (double)x0;
-	y = (double)y0;
-	for (i=0; i<iMax; i++) {
-		xn = x*x - y*y + x0;
-		yn = 2 * x * y + y0;
-		if (xn*xn + yn*yn > 4) {
-			return(i);
+void displayFractal(void) {
+	// https://rosettacode.org/wiki/Mandelbrot_set
+	// https://rosettacode.org/wiki/Julia_set
+	unsigned long cpt=0, cur=0;
+	int i=0, j=0, iter=0, min=0, max=0;
+	double x=0, y=0, zr=0, zi=0, zr2=0, zi2=0, tmp=0;
+	float hue=0, val=0;
+	float hueList[iterations];
+
+	min=maxIter; max=0;
+	colorsList = (float*)calloc(iterations*4, sizeof(colorsList));
+	for (j=0; j<sideLength; j++) {
+		y = ((ymax-ymin) * j / sideLength) + cy;
+
+		for (i=0; i<sideLength; i++) {
+			x = ((xmax-xmin) * i / sideLength) + cx;
+			iter = 0;
+			if (mandelbrot) {
+				// Mandelbrot set: formula z = z2 + c with c = x + iy
+				cr = x; ci = y;
+				zr = 0; zi = 0;
+			}
+			if (julia) {
+				// Julia set: formula z = z2 + c with z = x + iy
+				zr = x; zi = y;
+				cr = juliaR * cos(juliaA);
+				ci = juliaR * sin(juliaA);
+			}
+			do {
+				tmp = zr;
+				zr2 = zr*zr;
+				zi2 = zi*zi;
+				zr = zr2 - zi2 + cr;
+				zi = 2*zi*tmp + ci;
+				iter++;
+			} while ( (zr2+zi2<4) && (iter<maxIter) );
+
+			if (iter < min) min = iter;
+			if (iter > max) max = iter;
+			hueList[cpt] = iter;
+			cpt++;
 		}
-		x = xn;
-		y = yn;
 	}
-	return(iMax);
+	cpt = 0;
+	cur = 0;
+	for (j=0; j<sideLength; j++) {
+		for (i=0; i<sideLength; i++) {
+			hue = hueList[cpt];
+			if (!saturation) {
+				val = (float)(max-hue) / (float)(max-min);
+				colorsList[cur] = val;
+				colorsList[cur+1] = val;
+				colorsList[cur+2] = val;
+			} else {
+				hue = (hue+min) / (float)(max - min);
+				hsv2rgb(hue, saturation, 1.0, &colorsList[cur], &colorsList[cur+1], &colorsList[cur+2]);
+			}
+			colorsList[cur+3] = 1.0;
+			cpt++;
+			cur+=4;
+		}
+	}
 }
 
 
-int mandelbulb(float x0, float y0, float z0, int iMax, float power) {
+int computeMandelbulb(float x0, float y0, float z0, int iMax, float power) {
 	// http://images.math.cnrs.fr/Mandelbulb.html
 	// how many iterations we need to get infinity
 	double x=0.0, y=0.0, z=0.0, xn=0.0, yn=0.0, zn=0.0,
@@ -161,63 +235,16 @@ int mandelbulb(float x0, float y0, float z0, int iMax, float power) {
 }
 
 
-void populatePlanCoordonates(void) {
-	unsigned long c=0;
-	int i=0 , j=0;
-	float x=-20.0, z=20.0, p=0.0;
-
-	p = 40.0/(float)sideLength;
-	for (i=0; i<sideLength; i++) {
-		for (j=0; j<sideLength; j++) {
-			pointsList[c].x = x;
-			pointsList[c].y = 0.0;
-			pointsList[c].z = z;
-			c++;
-			x += p;
-		}
-		x = -20.0;
-		z -= p;
-	}
-}
-
-
-void mandelPopulateColors (void) {
-	unsigned long i=0;
-	float hue=0.0;
-	double x=xmin, z=zmax;
-	int m=0;
-
-	for (i=0; i<iterations; i++) {
-		m = mandelbrot(x, z, maxIter);
-		if (m < maxIter) {
-			hue = (float)m / (float)maxIter;
-			hsv2rgb(hue, 0.75, 0.9, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
-		}
-		x += pas;
-		if ((i!=0) && (i%sideLength==0)) {
-			x = xmin;
-			z -= pas;
-		}
-	}
-}
-
-
-void displayMandelbrot(void) {
-	pointsList = (point*)calloc(iterations, sizeof(point));
-	populatePlanCoordonates();
-	mandelPopulateColors();
-}
-
-
 void displayMandelbulb(void) {
 	unsigned long i=0;
 	float hue=0.0;
 	double x=0.0, y=0.0, z=0.0;
 	int m=0;
+
 	pointsList = (point*)calloc(iterations, sizeof(point));
 	x = xmin; y = xmin; z = xmin;
 	for (i=0; i<iterations; i++) {
-		m = mandelbulb(x, y, z, maxIter, power);
+		m = computeMandelbulb(x, y, z, maxIter, power);
 		if (m >= maxIter) {
 			if ((x>y) && (x>z)) {
 				hue = (float)x / (float)xmax;
@@ -244,16 +271,6 @@ void displayMandelbulb(void) {
 			}
 		}
 	}
-}
-
-
-void usage(void) {
-	couleur("31");
-	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
-	couleur("0");
-	printf("Syntaxe: visFractal3d <fractal> <background color>\n");
-	printf("\t<fractal> -> 'mandelbrot' or 'mandelbulb'\n");
-	printf("\t<background color> -> 'white' or 'black'\n");
 }
 
 
@@ -302,7 +319,11 @@ void drawString(float x, float y, float z, char *text) {
 void drawText(void) {
 	char text1[70], text2[70];
 	sprintf(text1, "Nbr of points: %ld, Max iterations: %d", iterations, maxIter);
-	sprintf(text2, "dt: %1.3f, FPS: %4.2f", (dt/1000.0), fps);
+	if (julia) {
+		sprintf(text2, "dt: %1.3f, FPS: %4.2f, cr=%0.3f ci=%0.3f", (dt/1000.0), fps, cr, ci);
+	} else {
+		sprintf(text2, "dt: %1.3f, FPS: %4.2f", (dt/1000.0), fps);
+	}
 	textList = glGenLists(1);
 	glNewList(textList, GL_COMPILE);
 	drawString(-40.0, -40.0, -100.0, text1);
@@ -311,81 +332,50 @@ void drawText(void) {
 }
 
 
-void drawBox(vector pos, vector color, float height, float width, float thickness, short faces) {
+void drawBox(vector pos, vector color, float height, float width, float thickness) {
 	glLineWidth(1.0);
 	glTranslatef(pos.x, pos.y, pos.z);
 	glColor3f(color.x, color.y, color.z);
 
-	if (faces) {
-		glBegin(GL_QUADS); // right face
-		glVertex3f( width/2.0,  thickness,  height/2.0);
-		glVertex3f( width/2.0, -thickness,  height/2.0);
-		glVertex3f( width/2.0, -thickness, -height/2.0);
-		glVertex3f( width/2.0,  thickness, -height/2.0);
-		glEnd();
+	glBegin(GL_LINES);
+	glVertex3f(-width/2.0, -thickness,  height/2.0);
+	glVertex3f( width/2.0, -thickness,  height/2.0);
+	glVertex3f(-width/2.0,  thickness,  height/2.0);
+	glVertex3f( width/2.0,  thickness,  height/2.0);
+	glVertex3f(-width/2.0, -thickness,  height/2.0);
+	glVertex3f(-width/2.0,  thickness,  height/2.0);
+	glVertex3f( width/2.0, -thickness,  height/2.0);
+	glVertex3f( width/2.0,  thickness,  height/2.0);
 
-		glBegin(GL_QUADS); // left face
-		glVertex3f(-width/2.0,  thickness,  height/2.0);
-		glVertex3f(-width/2.0, -thickness,  height/2.0);
-		glVertex3f(-width/2.0, -thickness, -height/2.0);
-		glVertex3f(-width/2.0,  thickness, -height/2.0);
-		glEnd();
+	glVertex3f(-width/2.0, -thickness, -height/2.0);
+	glVertex3f( width/2.0, -thickness, -height/2.0);
+	glVertex3f(-width/2.0,  thickness, -height/2.0);
+	glVertex3f( width/2.0,  thickness, -height/2.0);
+	glVertex3f(-width/2.0, -thickness, -height/2.0);
+	glVertex3f(-width/2.0,  thickness, -height/2.0);
+	glVertex3f( width/2.0, -thickness, -height/2.0);
+	glVertex3f( width/2.0,  thickness, -height/2.0);
 
-		glBegin(GL_QUADS); // top face
-		glVertex3f(-width/2.0,  thickness,  height/2.0);
-		glVertex3f( width/2.0,  thickness,  height/2.0);
-		glVertex3f( width/2.0, -thickness,  height/2.0);
-		glVertex3f(-width/2.0, -thickness,  height/2.0);
-		glEnd();
-
-		glBegin(GL_QUADS); // bottom face
-		glVertex3f(-width/2.0,  thickness, -height/2.0);
-		glVertex3f( width/2.0,  thickness, -height/2.0);
-		glVertex3f( width/2.0, -thickness, -height/2.0);
-		glVertex3f(-width/2.0, -thickness, -height/2.0);
-		glEnd();
-	} else {
-		glBegin(GL_LINES);
-		glVertex3f(-width/2.0, -thickness,  height/2.0);
-		glVertex3f( width/2.0, -thickness,  height/2.0);
-		glVertex3f(-width/2.0,  thickness,  height/2.0);
-		glVertex3f( width/2.0,  thickness,  height/2.0);
-		glVertex3f(-width/2.0, -thickness,  height/2.0);
-		glVertex3f(-width/2.0,  thickness,  height/2.0);
-		glVertex3f( width/2.0, -thickness,  height/2.0);
-		glVertex3f( width/2.0,  thickness,  height/2.0);
-
-		glVertex3f(-width/2.0, -thickness, -height/2.0);
-		glVertex3f( width/2.0, -thickness, -height/2.0);
-		glVertex3f(-width/2.0,  thickness, -height/2.0);
-		glVertex3f( width/2.0,  thickness, -height/2.0);
-		glVertex3f(-width/2.0, -thickness, -height/2.0);
-		glVertex3f(-width/2.0,  thickness, -height/2.0);
-		glVertex3f( width/2.0, -thickness, -height/2.0);
-		glVertex3f( width/2.0,  thickness, -height/2.0);
-
-		glVertex3f(-width/2.0, -thickness,  height/2.0);
-		glVertex3f(-width/2.0, -thickness, -height/2.0);
-		glVertex3f( width/2.0, -thickness,  height/2.0);
-		glVertex3f( width/2.0, -thickness, -height/2.0);
-		glVertex3f(-width/2.0,  thickness,  height/2.0);
-		glVertex3f(-width/2.0,  thickness, -height/2.0);
-		glVertex3f( width/2.0,  thickness,  height/2.0);
-		glVertex3f( width/2.0,  thickness, -height/2.0);
-		glEnd();
-	}
+	glVertex3f(-width/2.0, -thickness,  height/2.0);
+	glVertex3f(-width/2.0, -thickness, -height/2.0);
+	glVertex3f( width/2.0, -thickness,  height/2.0);
+	glVertex3f( width/2.0, -thickness, -height/2.0);
+	glVertex3f(-width/2.0,  thickness,  height/2.0);
+	glVertex3f(-width/2.0,  thickness, -height/2.0);
+	glVertex3f( width/2.0,  thickness,  height/2.0);
+	glVertex3f( width/2.0,  thickness, -height/2.0);
+	glEnd();
 }
 
 
-void drawWindow(int x, int z) {
-	vector pos = {(float)x, 0.0, (float)z};
-	vector color = {1.0, 0.4, 0.4};
-
-	float height = winSize,
-		width = winSize,
-		thickness = 0.5;
+void drawWindow(int x, int y) {
+	vector pos = {(float)x, 0.0, (float)y};
+	vector color = {0.6, 0.6, 0.6};
+	float height = 100 * 0.1,
+		width = 100 * 0.1,
+		thickness = 0.4;
 	glPushMatrix();
-	drawBox(pos, color, height, width, thickness, 0);
+	drawBox(pos, color, height, width, thickness);
 	glPopMatrix();
 }
 
@@ -398,7 +388,7 @@ void drawAxes(void) {
 		thickness = 0.8;
 	glPushMatrix();
 	if (flat) {
-		drawBox(pos, color, height, width, thickness, 1);
+		drawBox(pos, color, height, width, thickness);
 	} else {
 		glLineWidth(1.0);
 		glTranslatef(0.0, 0.0, 0.0);
@@ -406,6 +396,15 @@ void drawAxes(void) {
 		glutWireCube(100.0 * 0.33);
 	}
 	glPopMatrix();
+}
+
+
+void drawTexture(void) {
+	glBindTexture(GL_TEXTURE_2D, textureID);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sideLength, sideLength,
+		0, GL_RGBA, GL_FLOAT, colorsList);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
 
 
@@ -490,6 +489,7 @@ void onMouse(int button, int state, int x, int y) {
 
 void onKeyboard(unsigned char key, int x, int y) {
 	char *name = malloc(20 * sizeof(char));
+	float currentx, currenty, scale;
 	switch (key) {
 		case 27: // Escape
 			printf("INFO: exit\n");
@@ -498,28 +498,27 @@ void onKeyboard(unsigned char key, int x, int y) {
 			break;
 		case 13: // Return
 			if (flat) {
-				printf("INFO: winPos (%0.1f, %0.1f)\n", winPosx, winPosz);
-				maxIter *= 2;
-
-				xmin = xmin * (winPosx-(winSize*0.5)) / (double)(-20);
-				xmax = xmax * (winPosx+(winSize*0.5)) / (double)20;
-				zmin = zmin * (winPosz-(winSize*0.5)) / (double)(-20);
-				zmax = zmax * (winPosz+(winSize*0.5)) / (double)20;
-
-				pas = sqrt(((xmax-xmin) * (zmax-zmin)) / (double)iterations);
-				winPosx = 0; winPosz = 0;
-				printf("INFO: x:(%.3f,%.3f), z:(%.3f,%.3f), pas:%.6f\n", xmin, xmax, zmin, zmax, pas);
-				displayMandelbrot();
+				currentx = ((float)(winPosx+20)*(xmax-xmin)/40.0)+cx;
+				currenty = ((float)(winPosy+20)*(xmax-xmin)/40.0)+cy;
+				scale = (xmax-xmin)*0.5;
+				xmin = currentx - (scale * 0.5);
+				xmax = currentx + (scale * 0.5);
+				ymin = currenty - (scale * 0.5);
+				ymax = currenty + (scale * 0.5);
+				cx = xmin; cy = ymin;
+				maxIter += 128;
+				printf("INFO: winPos (%f, %f) scale:%f\n", currentx, currenty, scale);
+				displayFractal();
 			}
 			break;
 		case 8: // BackSpace
 			if (flat) {
-				pas = 4.0/(float)sideLength;
-				xmin=-2.0, xmax=2.0,
-				zmin=-2.0, zmax=2.0;
-				winPosx = 0; winPosz = 0;
-				maxIter = 20,
-				displayMandelbrot();
+				xmin=-2.0; xmax=2.0;
+				ymin=-2.0; ymax=2.0;
+				cx=xmin; cy=ymin;
+				maxIter = 128;
+				winPosx = 20; winPosy = 20;
+				displayFractal();
 			}
 			break;
 		case 'x':
@@ -533,22 +532,6 @@ void onKeyboard(unsigned char key, int x, int y) {
 		case 'y':
 			yy += 1.0;
 			printf("INFO: y = %f\n", yy);
-			break;
-		case 'i':
-			if (winPosz<20) { winPosz += 1; }
-			printf("INFO: winPosz = %0.1f\n", winPosz);
-			break;
-		case 'k':
-			if (winPosz>-20) { winPosz -= 1; }
-			printf("INFO: winPosz = %0.1f\n", winPosz);
-			break;
-		case 'j':
-			if (winPosx>-20) { winPosx -= 1; }
-			printf("INFO: winPosx = %0.1f\n", winPosx);
-			break;
-		case 'l':
-			if (winPosx<20) { winPosx += 1; }
-			printf("INFO: winPosx = %0.1f\n", winPosx);
 			break;
 		case 'Y':
 			yy -= 1.0;
@@ -571,6 +554,33 @@ void onKeyboard(unsigned char key, int x, int y) {
 		case 'c':
 			rotColor = !rotColor;
 			printf("INFO: rotate color %d\n", rotColor);
+			break;
+		case 'q':
+			if (julia) {
+				rotJulia = !rotJulia;
+				printf("INFO: rotate Julia %d\n", rotJulia);
+			}
+			break;
+		case 's':
+			saturation = 1 - saturation;
+			printf("INFO: saturation color %d\n", saturation);
+			displayFractal();
+			break;
+		case 'i':
+			if (winPosy<20) { winPosy += 1; }
+			printf("INFO: winPosy = %d\n", winPosy);
+			break;
+		case 'k':
+			if (winPosy>-20) { winPosy -= 1; }
+			printf("INFO: winPosy = %d\n", winPosy);
+			break;
+		case 'j':
+			if (winPosx>-20) { winPosx -= 1; }
+			printf("INFO: winPosx = %d\n", winPosx);
+			break;
+		case 'l':
+			if (winPosx<20) { winPosx += 1; }
+			printf("INFO: winPosx = %d\n", winPosx);
 			break;
 		case 'z':
 			zoom -= 5.0;
@@ -627,12 +637,21 @@ void update(int value) {
 			break;
 	}
 	if (rotColor) {
-		for (i=0; i<iterations; i++) {
-			if ((pointsList[i].r!=0) && (pointsList[i].g!=0) && (pointsList[i].b!=0)) {
+		if (flat) {
+			for (i=0; i<iterations*4; i+=4) {
+				temp = rgb2hsv(colorsList[i], colorsList[i+1], colorsList[i+2]);
+				hsv2rgb(temp.x+0.01, 0.75, 0.9, &colorsList[i], &colorsList[i+1], &colorsList[i+2]);
+			}
+		} else {
+			for (i=0; i<iterations; i++) {
 				temp = rgb2hsv(pointsList[i].r, pointsList[i].g, pointsList[i].b);
 				hsv2rgb(temp.x+0.01, 0.75, 0.9, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 			}
 		}
+	}
+	if (rotJulia) {
+		juliaA = fmod(juliaA+0.005, 2*pi);
+		displayFractal();
 	}
 	glutPostRedisplay();
 	glutTimerFunc(dt, update, 0);
@@ -654,16 +673,28 @@ void display(void) {
 	glRotatef(roty, 0.0, 1.0, 0.0);
 	glRotatef(rotz, 0.0, 0.0, 1.0);
 	drawAxes();
-	if (flat) { drawWindow(winPosx, winPosz); }
 
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glEnableClientState(GL_COLOR_ARRAY);
-	glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
-	glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
-	glDrawArrays(GL_POINTS, 0, iterations);
-	glDisableClientState(GL_COLOR_ARRAY);
-	glDisableClientState(GL_VERTEX_ARRAY);
-
+	if (flat) {
+		glEnable(GL_TEXTURE_2D);
+		glGenTextures(1, &textureID);
+		drawTexture();
+		glBegin(GL_QUADS);
+			glTexCoord2i(0, 0); glVertex3f(-25.0, 0.0, -25.0);
+			glTexCoord2i(1, 0); glVertex3f(25.0, 0.0, -25.0);
+			glTexCoord2i(1, 1); glVertex3f(25.0, 0.0, 25.0);
+			glTexCoord2i(0, 1); glVertex3f(-25.0, 0.0, 25.0);
+		glEnd();
+		glDisable(GL_TEXTURE_2D);
+		drawWindow(winPosx, winPosy);
+	} else {
+		glEnableClientState(GL_VERTEX_ARRAY);
+		glEnableClientState(GL_COLOR_ARRAY);
+		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
+		glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
+		glDrawArrays(GL_POINTS, 0, iterations);
+		glDisableClientState(GL_COLOR_ARRAY);
+		glDisableClientState(GL_VERTEX_ARRAY);
+	}
 	glPopMatrix();
 
 	glutSwapBuffers();
@@ -689,9 +720,6 @@ void init(void) {
 	glEnable(GL_COLOR_MATERIAL);
 	glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
 
-	glShadeModel(GL_SMOOTH);
-	glEnable(GL_DEPTH_TEST);
-
 	GLfloat no_mat[] = {0.0, 0.0, 0.0, 1.0};
 	GLfloat mat_diffuse[] = {0.1, 0.5, 0.8, 1.0};
 	GLfloat mat_specular[] = {1.0, 1.0, 1.0, 1.0};
@@ -702,17 +730,23 @@ void init(void) {
 	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
 	glMaterialfv(GL_FRONT, GL_EMISSION, no_mat);
 
+	glShadeModel(GL_SMOOTH);
+	glEnable(GL_DEPTH_TEST);
+
 	glEnable(GL_NORMALIZE);
 	glEnable(GL_AUTO_NORMAL);
 	glDepthFunc(GL_LESS);
+
+	glEnable(GL_TEXTURE_2D);
+	glGenTextures(1, &textureID);
 }
 
 
 void glmain(int argc, char *argv[]) {
 	glutInit(&argc, argv);
+	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutInitWindowSize(winSizeW, winSizeH);
 	glutInitWindowPosition(120, 10);
-	glutInitDisplayMode(GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
 	init();
 	glutDisplayFunc(display);
@@ -728,6 +762,7 @@ void glmain(int argc, char *argv[]) {
 	fprintf(stdout, "INFO: Nbr points: %ld\n", iterations);
 	glutMainLoop();
 	glDeleteLists(textList, 1);
+	glDeleteTextures(1, &textureID);
 }
 
 
@@ -735,24 +770,31 @@ void launchDisplay(int argc, char *argv[]) {
 	if (!strncmp(argv[2], "white", 5)) {
 		background = 1;
 	}
-	if (strcmp(argv[1], "mandelbrot") == 0) {
+	if (strcmp(argv[1], "mandelbrot") == 0) { mandelbrot=1; }
+	else if (strcmp(argv[1], "julia") == 0) { julia=1; }
+	else if (strcmp(argv[1], "mandelbulb") == 0) { mandelbulb=1; }
+	else {
+		usage();
+		exit(EXIT_FAILURE);
+	}
+	if ((mandelbrot) || (julia)) {
 		flat = 1;
 		xmin=-2.0; xmax=2.0;
-		zmin=-2.0; zmax=2.0;
-		sideLength = 1000;
+		ymin=-2.0; ymax=2.0;
+		cx=xmin, cy=ymin,
+		sideLength = 800;
 		iterations = sideLength * sideLength;
-		pas = (xmax-xmin)/(float)sideLength;
-		displayMandelbrot();
-	} else if (strcmp(argv[1], "mandelbulb") == 0) {
+		maxIter = 128;
+		displayFractal();
+	}
+	if (mandelbulb) {
 		power=5;
 		xmin=-1.20; xmax=1.20;
 		sideLength = 200;
 		iterations = sideLength * sideLength * sideLength;
+		maxIter = 20;
 		pas = (xmax-xmin)/(float)sideLength;
 		displayMandelbulb();
-	} else {
-		usage();
-		exit(EXIT_FAILURE);
 	}
 	glmain(argc, argv);
 }
@@ -762,6 +804,8 @@ int main(int argc, char *argv[]) {
 	switch (argc) {
 		case 3:
 			launchDisplay(argc, argv);
+			free(colorsList);
+			free(pointsList);
 			exit(EXIT_SUCCESS);
 			break;
 		default:
