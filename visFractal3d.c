@@ -141,6 +141,31 @@ void hsv2rgb(float h, float s, float v, GLfloat *r, GLfloat *g, GLfloat *b) {
 }
 
 
+void getWorldPos(int x, int y) {
+	GLint viewport[4];
+	GLdouble modelview[16];
+	GLdouble projection[16];
+	GLfloat winX, winY, winZ;
+	GLdouble posX, posY, posZ;
+
+	glGetDoublev( GL_MODELVIEW_MATRIX, modelview );
+	glGetDoublev( GL_PROJECTION_MATRIX, projection );
+	glGetIntegerv( GL_VIEWPORT, viewport );
+
+	winX = (float)x;
+	winY = (float)viewport[3] - (float)y;
+	glReadPixels( x, (int)winY, 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &winZ );
+	gluUnProject( winX, winY, winZ, modelview, projection, viewport, &posX, &posY, &posZ);
+	winPosx = (int)posX;
+	winPosy = (int)posY;
+	if (winPosx>20) { winPosx=20; }
+	if (winPosy>20) { winPosy=20; }
+	if (winPosx<-20) { winPosx=-20; }
+	if (winPosy<-20) { winPosy=-20; }
+	printf("INFO: winPosx=%d, winPosy=%d\n", winPosx, winPosy);
+}
+
+
 void displayFractal(void) {
 	// https://rosettacode.org/wiki/Mandelbrot_set
 	// https://rosettacode.org/wiki/Julia_set
@@ -476,6 +501,7 @@ void onMouse(int button, int state, int x, int y) {
 		case GLUT_LEFT_BUTTON:
 			if (state == GLUT_DOWN) {
 				printf("INFO: left button, x %d, y %d\n", x, y);
+				getWorldPos(x, y);
 			}
 			break;
 		case GLUT_RIGHT_BUTTON:
@@ -565,22 +591,6 @@ void onKeyboard(unsigned char key, int x, int y) {
 			saturation = 1 - saturation;
 			printf("INFO: saturation color %d\n", saturation);
 			displayFractal();
-			break;
-		case 'i':
-			if (winPosy<20) { winPosy += 1; }
-			printf("INFO: winPosy = %d\n", winPosy);
-			break;
-		case 'k':
-			if (winPosy>-20) { winPosy -= 1; }
-			printf("INFO: winPosy = %d\n", winPosy);
-			break;
-		case 'j':
-			if (winPosx>-20) { winPosx -= 1; }
-			printf("INFO: winPosx = %d\n", winPosx);
-			break;
-		case 'l':
-			if (winPosx<20) { winPosx += 1; }
-			printf("INFO: winPosx = %d\n", winPosx);
 			break;
 		case 'z':
 			zoom -= 5.0;
