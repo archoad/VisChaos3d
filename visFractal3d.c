@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 
 #define WINDOW_TITLE_PREFIX "visFractal3d"
 #define couleur(param) printf("\033[%sm",param)
+#define N_ELEMENTS(array) (sizeof(array)/sizeof((array)[0]))
 
 static short winSizeW = 920,
 	winSizeH = 690,
@@ -47,12 +48,15 @@ static short winSizeW = 920,
 	mandelbulb = 0,
 	mandelbrot = 0,
 	julia = 0,
+	menger = 0,
+	mengerDepth = 0,
 	dt = 20; // in milliseconds
 
 static int textList = 0,
 	cpt = 0,
 	background = 0,
 	maxIter = 0,
+	mengerIter = 0,
 	sideLength = 0,
 	winPosx = 20,
 	winPosy = 20;
@@ -81,18 +85,26 @@ typedef struct _vector {
 	float x, y, z;
 } vector;
 
+typedef struct _cube {
+	vector pos;
+	vector color;
+	float size;
+} cube;
+
 typedef struct _point {
 	GLfloat x, y, z;
 	GLfloat r, g, b;
 } point;
 
 static float *colorsList = NULL;
-
 static point *pointsList = NULL;
+static cube *cubeList = NULL;
 
 static unsigned long iterations = 0;
 
 static GLuint textureID;
+
+static int mengerRemovals[7] = {4, 10, 12, 13, 14, 16, 22};
 
 
 
@@ -102,7 +114,7 @@ void usage(void) {
 	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
 	couleur("0");
 	printf("Syntaxe: visFractal3d <fractal> <background color>\n");
-	printf("\t<fractal> -> 'mandelbrot', 'julia' or 'mandelbulb'\n");
+	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger' or 'mandelbulb'\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
 }
 
@@ -166,6 +178,31 @@ void getWorldPos(int x, int y) {
 }
 
 
+void defineNewParameters(int direction) {
+	float currentx, currenty, scale;
+
+	currentx = ((float)(winPosx+20)*(xmax-xmin)/40.0)+cx;
+	currenty = ((float)(winPosy+20)*(xmax-xmin)/40.0)+cy;
+	if (direction) { // increase
+		scale = (xmax-xmin)*0.5;
+		xmin = currentx - (scale * 0.5);
+		xmax = currentx + (scale * 0.5);
+		ymin = currenty - (scale * 0.5);
+		ymax = currenty + (scale * 0.5);
+		cx = xmin; cy = ymin;
+		maxIter += 128;
+	} else { // decrease
+		scale = xmax-xmin;
+		xmin = currentx - scale;
+		xmax = currentx + scale;
+		ymin = currenty - scale;
+		ymax = currenty + scale;
+		cx = xmin; cy = ymin;
+		maxIter -= 128;
+	}
+}
+
+
 void displayFractal(void) {
 	// https://rosettacode.org/wiki/Mandelbrot_set
 	// https://rosettacode.org/wiki/Julia_set
@@ -176,7 +213,6 @@ void displayFractal(void) {
 	float hueList[iterations];
 
 	min=maxIter; max=0;
-	colorsList = (float*)calloc(iterations*4, sizeof(colorsList));
 	for (j=0; j<sideLength; j++) {
 		y = ((ymax-ymin) * j / sideLength) + cy;
 
@@ -266,7 +302,6 @@ void displayMandelbulb(void) {
 	double x=0.0, y=0.0, z=0.0;
 	int m=0;
 
-	pointsList = (point*)calloc(iterations, sizeof(point));
 	x = xmin; y = xmin; z = xmin;
 	for (i=0; i<iterations; i++) {
 		m = computeMandelbulb(x, y, z, maxIter, power);
@@ -296,6 +331,116 @@ void displayMandelbulb(void) {
 			}
 		}
 	}
+}
+
+
+void drawCube(vector pos, vector color, double size) {
+	float dim = size * 0.5;
+	glLineWidth(1.0);
+	glTranslatef(pos.x, pos.y, pos.z);
+	glColor3f(color.x, color.y, color.z);
+
+	glBegin(GL_QUADS); // face
+		glVertex3f(-dim, -dim,  dim);
+		glVertex3f( dim, -dim,  dim);
+		glVertex3f( dim, -dim, -dim);
+		glVertex3f(-dim, -dim, -dim);
+	glEnd();
+	glBegin(GL_QUADS); // back
+		glVertex3f(-dim,  dim,  dim);
+		glVertex3f( dim,  dim,  dim);
+		glVertex3f( dim,  dim, -dim);
+		glVertex3f(-dim,  dim, -dim);
+	glEnd();
+	glBegin(GL_QUADS); // right
+		glVertex3f( dim, -dim,  dim);
+		glVertex3f( dim,  dim,  dim);
+		glVertex3f( dim,  dim, -dim);
+		glVertex3f( dim, -dim, -dim);
+	glEnd();
+	glBegin(GL_QUADS); // left
+		glVertex3f(-dim, -dim,  dim);
+		glVertex3f(-dim,  dim,  dim);
+		glVertex3f(-dim,  dim, -dim);
+		glVertex3f(-dim, -dim, -dim);
+	glEnd();
+	glBegin(GL_QUADS); // top
+		glVertex3f(-dim, -dim,  dim);
+		glVertex3f( dim, -dim,  dim);
+		glVertex3f( dim,  dim,  dim);
+		glVertex3f(-dim,  dim,  dim);
+	glEnd();
+	glBegin(GL_QUADS); // bottom
+		glVertex3f(-dim, -dim, -dim);
+		glVertex3f( dim, -dim, -dim);
+		glVertex3f( dim,  dim, -dim);
+		glVertex3f(-dim,  dim, -dim);
+	glEnd();
+}
+
+
+short isUnRemovable(int val) {
+	unsigned long i;
+	short result=1;
+	for (i=0; i<N_ELEMENTS(mengerRemovals); i++) {
+		if (val == mengerRemovals[i]) {
+			result = 0;
+			break;
+		}
+	}
+	return(result);
+}
+
+
+void computeMenger(float xc, float yc, float zc, float size, int depth) {
+	int x=0, y=0, z=0, val=0;
+	float xorig, yorig, zorig;
+
+	xorig = xc;
+	yorig = yc;
+	zorig = zc;
+	size = size / 3.0;
+	val = 0;
+	for (x=0; x<3; x++) {
+		for (z=0; z<3; z++) {
+			for (y=0; y<3; y++) {
+				if (isUnRemovable(val)) {
+					xc = xorig + x * size;
+					yc = yorig + y * size;
+					zc = zorig + z * size;
+					if (depth > 2) {
+						computeMenger(xc, yc, zc, size, depth-1);
+					} else {
+						cubeList[cpt].size = size;
+						cubeList[cpt].pos.x = xc-13.5;
+						cubeList[cpt].pos.y = yc-13.5;
+						cubeList[cpt].pos.z = zc-13.5;
+						cpt++;
+					}
+				}
+				val++;
+			}
+		}
+	}
+}
+
+
+void colorizeMenger(void) {
+	int i=0;
+	double hue=0.0, saturation=0.0, value=0.0;
+	saturation = 0.50;
+	value = 0.50;
+	for (i=0; i<mengerIter; i++) {
+		hue = (double)i / (double)mengerIter;
+		hsv2rgb(hue, saturation, value, &cubeList[i].color.x, &cubeList[i].color.y, &cubeList[i].color.z);
+	}
+}
+
+
+void displayMenger(void) {
+	computeMenger(0.0f, 0.0f, 0.0f, 30, mengerDepth);
+	colorizeMenger();
+	printf("INFO: number of cubes: %d (%d)\n", cpt, mengerIter);
 }
 
 
@@ -499,14 +644,19 @@ void onIdle(void) {
 void onMouse(int button, int state, int x, int y) {
 	switch (button) {
 		case GLUT_LEFT_BUTTON:
-			if (state == GLUT_DOWN) {
+			if (state == GLUT_DOWN) { // increase
 				printf("INFO: left button, x %d, y %d\n", x, y);
 				getWorldPos(x, y);
+				defineNewParameters(1);
+				displayFractal();
 			}
 			break;
 		case GLUT_RIGHT_BUTTON:
-			if (state == GLUT_DOWN) {
+			if (state == GLUT_DOWN) { // decrease
 				printf("INFO: right button, x %d, y %d\n", x, y);
+				getWorldPos(x, y);
+				defineNewParameters(0);
+				displayFractal();
 			}
 			break;
 	}
@@ -515,27 +665,11 @@ void onMouse(int button, int state, int x, int y) {
 
 void onKeyboard(unsigned char key, int x, int y) {
 	char *name = malloc(20 * sizeof(char));
-	float currentx, currenty, scale;
 	switch (key) {
 		case 27: // Escape
 			printf("INFO: exit\n");
 			printf("x %d, y %d\n", x, y);
 			exit(0);
-			break;
-		case 13: // Return
-			if (flat) {
-				currentx = ((float)(winPosx+20)*(xmax-xmin)/40.0)+cx;
-				currenty = ((float)(winPosy+20)*(xmax-xmin)/40.0)+cy;
-				scale = (xmax-xmin)*0.5;
-				xmin = currentx - (scale * 0.5);
-				xmax = currentx + (scale * 0.5);
-				ymin = currenty - (scale * 0.5);
-				ymax = currenty + (scale * 0.5);
-				cx = xmin; cy = ymin;
-				maxIter += 128;
-				printf("INFO: winPos (%f, %f) scale:%f\n", currentx, currenty, scale);
-				displayFractal();
-			}
 			break;
 		case 8: // BackSpace
 			if (flat) {
@@ -578,8 +712,10 @@ void onKeyboard(unsigned char key, int x, int y) {
 			printf("INFO: rotate %d\n", rotate);
 			break;
 		case 'c':
-			rotColor = !rotColor;
-			printf("INFO: rotate color %d\n", rotColor);
+			if (saturation) {
+				rotColor = !rotColor;
+				printf("INFO: rotate color %d\n", rotColor);
+			}
 			break;
 		case 'q':
 			if (julia) {
@@ -669,6 +805,7 @@ void update(int value) {
 
 
 void display(void) {
+	int i = 0;
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glMatrixMode(GL_MODELVIEW);
@@ -682,6 +819,17 @@ void display(void) {
 	glRotatef(rotx, 1.0, 0.0, 0.0);
 	glRotatef(roty, 0.0, 1.0, 0.0);
 	glRotatef(rotz, 0.0, 0.0, 1.0);
+
+	GLfloat ambient1[] = {0.15f, 0.15f, 0.15f, 1.0f};
+	GLfloat diffuse1[] = {0.8f, 0.8f, 0.8f, 1.0f};
+	GLfloat specular1[] = {1.0f, 1.0f, 1.0f, 1.0f};
+	GLfloat position1[] = {0.0f, 0.0f, 0.0f, 1.0f};
+	glLightfv(GL_LIGHT1, GL_AMBIENT, ambient1);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuse1);
+	glLightfv(GL_LIGHT1, GL_DIFFUSE, specular1);
+	glLightfv(GL_LIGHT1, GL_POSITION, position1);
+	glEnable(GL_LIGHT1);
+
 	drawAxes();
 
 	if (flat) {
@@ -696,7 +844,7 @@ void display(void) {
 		glEnd();
 		glDisable(GL_TEXTURE_2D);
 		drawWindow(winPosx, winPosy);
-	} else {
+	} else if (mandelbulb) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
@@ -704,6 +852,12 @@ void display(void) {
 		glDrawArrays(GL_POINTS, 0, iterations);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
+	} else {
+		for (i=0; i<mengerIter; i++) {
+			glPushMatrix();
+			drawCube(cubeList[i].pos, cubeList[i].color, cubeList[i].size);
+			glPopMatrix();
+		}
 	}
 	glPopMatrix();
 
@@ -719,26 +873,32 @@ void init(void) {
 		glClearColor(0.1, 0.1, 0.1, 1.0);
 	}
 
-	GLfloat position[] = {0.0, 0.0, 0.0, 1.0};
-	glLightfv(GL_LIGHT0, GL_POSITION, position);
-
-	GLfloat modelAmbient[] = {1.0, 1.0, 1.0, 1.0};
-	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, modelAmbient);
-
 	glEnable(GL_LIGHTING);
+
+	GLfloat ambient[] = {0.15f, 0.15f, 0.15f, 1.0f};
+	GLfloat diffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
+	GLfloat specular[] = {1.0f, 1.0f, 1.0f, 1.0f};
+	GLfloat position[] = {0.0f, 0.0f, 0.0f, 1.0f};
+	glLightfv(GL_LIGHT0, GL_AMBIENT, ambient);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, diffuse);
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, specular);
+	glLightfv(GL_LIGHT0, GL_POSITION, position);
 	glEnable(GL_LIGHT0);
+
 	glEnable(GL_COLOR_MATERIAL);
 	glColorMaterial(GL_FRONT, GL_AMBIENT_AND_DIFFUSE);
+	GLfloat matAmbient[] = {0.3f, 0.3f, 0.3f, 1.0f};
+	GLfloat matDiffuse[] = {0.6f, 0.6f, 0.6f, 1.0f};
+	GLfloat matSpecular[] = {0.8f, 0.8f, 0.8f, 1.0f};
+	GLfloat matShininess[] = {128.0f};
+	glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT, matAmbient);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_DIFFUSE, matDiffuse);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, matSpecular);
+	glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, matShininess);
 
-	GLfloat no_mat[] = {0.0, 0.0, 0.0, 1.0};
-	GLfloat mat_diffuse[] = {0.1, 0.5, 0.8, 1.0};
-	GLfloat mat_specular[] = {1.0, 1.0, 1.0, 1.0};
-	GLfloat shininess[] = {128.0};
-	glMaterialfv(GL_FRONT, GL_AMBIENT, no_mat);
-	glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
-	glMaterialfv(GL_FRONT, GL_SPECULAR, mat_specular);
-	glMaterialfv(GL_FRONT, GL_SHININESS, shininess);
-	glMaterialfv(GL_FRONT, GL_EMISSION, no_mat);
+	GLfloat baseAmbient[] = {0.5f, 0.5f, 0.5f, 0.5f};
+	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, baseAmbient);
+	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
 	glShadeModel(GL_SMOOTH);
 	glEnable(GL_DEPTH_TEST);
@@ -771,6 +931,9 @@ void glmain(int argc, char *argv[]) {
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
 	fprintf(stdout, "INFO: Nbr points: %ld\n", iterations);
 	glutMainLoop();
+	free(colorsList);
+	free(pointsList);
+	free(cubeList);
 	glDeleteLists(textList, 1);
 	glDeleteTextures(1, &textureID);
 }
@@ -783,6 +946,7 @@ void launchDisplay(int argc, char *argv[]) {
 	if (strcmp(argv[1], "mandelbrot") == 0) { mandelbrot=1; }
 	else if (strcmp(argv[1], "julia") == 0) { julia=1; }
 	else if (strcmp(argv[1], "mandelbulb") == 0) { mandelbulb=1; }
+	else if (strcmp(argv[1], "menger") == 0) { menger=1; }
 	else {
 		usage();
 		exit(EXIT_FAILURE);
@@ -792,9 +956,10 @@ void launchDisplay(int argc, char *argv[]) {
 		xmin=-2.0; xmax=2.0;
 		ymin=-2.0; ymax=2.0;
 		cx=xmin, cy=ymin,
-		sideLength = 800;
+		sideLength = 600;
 		iterations = sideLength * sideLength;
 		maxIter = 128;
+		colorsList = (float*)calloc(iterations*4, sizeof(colorsList));
 		displayFractal();
 	}
 	if (mandelbulb) {
@@ -804,7 +969,15 @@ void launchDisplay(int argc, char *argv[]) {
 		iterations = sideLength * sideLength * sideLength;
 		maxIter = 20;
 		pas = (xmax-xmin)/(float)sideLength;
+		pointsList = (point*)calloc(iterations, sizeof(point));
 		displayMandelbulb();
+	}
+	if (menger) {
+		mengerDepth = 4;
+		cpt = 0;
+		mengerIter = pow(20, mengerDepth-1);
+		cubeList = (cube*)calloc(mengerIter, sizeof(cube));
+		displayMenger();
 	}
 	glmain(argc, argv);
 }
@@ -814,8 +987,6 @@ int main(int argc, char *argv[]) {
 	switch (argc) {
 		case 3:
 			launchDisplay(argc, argv);
-			free(colorsList);
-			free(pointsList);
 			exit(EXIT_SUCCESS);
 			break;
 		default:
