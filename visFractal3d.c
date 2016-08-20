@@ -40,23 +40,17 @@ static short winSizeW = 920,
 	currentTime = 0,
 	timebase = 0,
 	fullScreen = 0,
-	rotate = 0,
-	rotColor = 0,
-	rotJulia = 0,
-	flat = 0,
+	rotate = 0, rotColor = 0, rotJulia = 0,
 	saturation = 1,
-	mandelbulb = 0,
-	mandelbrot = 0,
-	julia = 0,
-	menger = 0,
-	mengerDepth = 0,
-	dt = 20; // in milliseconds
+	mandelbulb = 0, mandelbrot = 0, julia = 0, menger = 0, sierpinski = 0,
+	mengerDepth = 0, sierpinskiDepth = 0,
+	flat = 0, dt = 20; // in milliseconds
 
 static int textList = 0,
 	cpt = 0,
 	background = 0,
 	maxIter = 0,
-	mengerIter = 0,
+	mengerIter = 0, sierpinskiIter = 0,
 	sideLength = 0,
 	winPosx = 20,
 	winPosy = 20;
@@ -85,11 +79,11 @@ typedef struct _vector {
 	float x, y, z;
 } vector;
 
-typedef struct _cube {
+typedef struct _object {
 	vector pos;
 	vector color;
 	float size;
-} cube;
+} object;
 
 typedef struct _point {
 	GLfloat x, y, z;
@@ -98,7 +92,8 @@ typedef struct _point {
 
 static float *colorsList = NULL;
 static point *pointsList = NULL;
-static cube *cubeList = NULL;
+static object *cubeList = NULL;
+static object *pyramidList = NULL;
 
 static unsigned long iterations = 0;
 
@@ -107,15 +102,37 @@ static GLuint textureID;
 static int mengerRemovals[7] = {4, 10, 12, 13, 14, 16, 22};
 
 
-
-
 void usage(void) {
 	couleur("31");
 	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
 	couleur("0");
 	printf("Syntaxe: visFractal3d <fractal> <background color>\n");
-	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger' or 'mandelbulb'\n");
+	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger', 'sierpinski' or 'mandelbulb'\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
+}
+
+
+void help(void) {
+	couleur("31");
+	printf("Michel Dubois -- gravity3d -- (c) 2013\n\n");
+	couleur("0");
+	printf("Key usage:\n");
+	printf("\t'ESC' key to quit\n");
+	printf("\t'BackSpace' to reinitialize\n");
+	printf("\t'UP', 'DOWN', 'LEFT' and 'RIGHT' keys to rotate manually\n");
+	printf("\t'r' to rotate continuously\n");
+	printf("\t'x' and 'X' to move to right and left\n");
+	printf("\t'y' and 'Y' to move to top and bottom\n");
+	printf("\t'z' and 'Z' to zoom in or out\n");
+	printf("\t'f' to switch to full screen\n");
+	printf("\t'p' to take a screenshot\n");
+	printf("\t'c' to rotate color\n");
+	printf("\t's' to switch to black & white\n");
+	printf("\t'a' while displaying menger fractal, add steps\n");
+	printf("\t'q' while displaying julia set, rotate variables\n");
+	printf("Mouse usage:\n");
+	printf("\t'LEFT CLICK' to zoom into the fractal\n");
+	printf("\n");
 }
 
 
@@ -340,37 +357,56 @@ void drawCube(vector pos, vector color, double size) {
 	glTranslatef(pos.x, pos.y, pos.z);
 	glColor3f(color.x, color.y, color.z);
 
-	glBegin(GL_QUADS); // face
+	glBegin(GL_QUADS);
+		// front
 		glVertex3f(-dim, -dim,  dim);
 		glVertex3f( dim, -dim,  dim);
 		glVertex3f( dim, -dim, -dim);
 		glVertex3f(-dim, -dim, -dim);
-	glEnd();
-	glBegin(GL_QUADS); // back
+		// back
 		glVertex3f(-dim,  dim,  dim);
 		glVertex3f( dim,  dim,  dim);
 		glVertex3f( dim,  dim, -dim);
 		glVertex3f(-dim,  dim, -dim);
-	glEnd();
-	glBegin(GL_QUADS); // right
+		// right
 		glVertex3f( dim, -dim,  dim);
 		glVertex3f( dim,  dim,  dim);
 		glVertex3f( dim,  dim, -dim);
 		glVertex3f( dim, -dim, -dim);
-	glEnd();
-	glBegin(GL_QUADS); // left
+		// left
 		glVertex3f(-dim, -dim,  dim);
 		glVertex3f(-dim,  dim,  dim);
 		glVertex3f(-dim,  dim, -dim);
 		glVertex3f(-dim, -dim, -dim);
-	glEnd();
-	glBegin(GL_QUADS); // top
+		// top
 		glVertex3f(-dim, -dim,  dim);
 		glVertex3f( dim, -dim,  dim);
 		glVertex3f( dim,  dim,  dim);
 		glVertex3f(-dim,  dim,  dim);
+		// bottom
+		glVertex3f(-dim, -dim, -dim);
+		glVertex3f( dim, -dim, -dim);
+		glVertex3f( dim,  dim, -dim);
+		glVertex3f(-dim,  dim, -dim);
 	glEnd();
-	glBegin(GL_QUADS); // bottom
+}
+
+
+void drawPyramid(vector pos, vector color, double size) {
+	float dim = size * 0.5;
+	glLineWidth(1.0);
+	glTranslatef(pos.x, pos.y, pos.z);
+	glColor3f(color.x, color.y, color.z);
+
+	glBegin(GL_TRIANGLE_FAN);
+		glVertex3f( 0.0, 0.0, dim);
+		glVertex3f( dim, -dim, -dim);
+		glVertex3f( dim,  dim, -dim);
+		glVertex3f(-dim,  dim, -dim);
+		glVertex3f(-dim, -dim, -dim);
+		glVertex3f( dim, -dim, -dim);
+	glEnd();
+	glBegin(GL_QUADS);
 		glVertex3f(-dim, -dim, -dim);
 		glVertex3f( dim, -dim, -dim);
 		glVertex3f( dim,  dim, -dim);
@@ -396,29 +432,37 @@ void computeMenger(float xc, float yc, float zc, float size, int depth) {
 	int x=0, y=0, z=0, val=0;
 	float xorig, yorig, zorig;
 
-	xorig = xc;
-	yorig = yc;
-	zorig = zc;
-	size = size / 3.0;
-	val = 0;
-	for (x=0; x<3; x++) {
-		for (z=0; z<3; z++) {
-			for (y=0; y<3; y++) {
-				if (isUnRemovable(val)) {
-					xc = xorig + x * size;
-					yc = yorig + y * size;
-					zc = zorig + z * size;
-					if (depth > 2) {
-						computeMenger(xc, yc, zc, size, depth-1);
-					} else {
-						cubeList[cpt].size = size;
-						cubeList[cpt].pos.x = xc-13.5;
-						cubeList[cpt].pos.y = yc-13.5;
-						cubeList[cpt].pos.z = zc-13.5;
-						cpt++;
+	if (depth==1) {
+		cubeList[cpt].size = size;
+		cubeList[cpt].pos.x = 0.0;
+		cubeList[cpt].pos.y = 0.0;
+		cubeList[cpt].pos.z = 0.0;
+	} else {
+		xorig = xc;
+		yorig = yc;
+		zorig = zc;
+		size = size / 3.0;
+		val = 0;
+		for (x=0; x<3; x++) {
+			for (z=0; z<3; z++) {
+				for (y=0; y<3; y++) {
+					if (isUnRemovable(val)) {
+						xc = xorig + x * size;
+						yc = yorig + y * size;
+						zc = zorig + z * size;
+						if (depth > 2) {
+							computeMenger(xc, yc, zc, size, depth-1);
+						} else {
+							if (xmax < xc) { xmax = xc; }
+							cubeList[cpt].size = size;
+							cubeList[cpt].pos.x = xc;
+							cubeList[cpt].pos.y = yc;
+							cubeList[cpt].pos.z = zc;
+							cpt++;
+						}
 					}
+					val++;
 				}
-				val++;
 			}
 		}
 	}
@@ -427,12 +471,17 @@ void computeMenger(float xc, float yc, float zc, float size, int depth) {
 
 void colorizeMenger(void) {
 	int i=0;
+	float decal;
 	double hue=0.0, saturation=0.0, value=0.0;
 	saturation = 0.50;
 	value = 0.50;
+	decal = xmax / 2.0;
 	for (i=0; i<mengerIter; i++) {
 		hue = (double)i / (double)mengerIter;
 		hsv2rgb(hue, saturation, value, &cubeList[i].color.x, &cubeList[i].color.y, &cubeList[i].color.z);
+		cubeList[i].pos.x -= decal;
+		cubeList[i].pos.y -= decal;
+		cubeList[i].pos.z -= decal;
 	}
 }
 
@@ -440,7 +489,71 @@ void colorizeMenger(void) {
 void displayMenger(void) {
 	computeMenger(0.0f, 0.0f, 0.0f, 30, mengerDepth);
 	colorizeMenger();
-	printf("INFO: number of cubes: %d (%d)\n", cpt, mengerIter);
+}
+
+
+void colorizeSierpinski(void) {
+	int i=0;
+	float decal;
+	double hue=0.0, saturation=0.0, value=0.0;
+	saturation = 0.50;
+	value = 0.50;
+	decal = xmax / 2.0;
+	for (i=0; i<sierpinskiIter; i++) {
+		hue = (double)i / (double)sierpinskiIter;
+		hsv2rgb(hue, saturation, value, &pyramidList[i].color.x, &pyramidList[i].color.y, &pyramidList[i].color.z);
+		pyramidList[i].pos.z -= decal;
+	}
+}
+
+
+void computeSierpinski(float xc, float yc, float zc, float size, int depth) {
+	float decal=0.0;
+	vector pos;
+
+	size = size / 2.0;
+	decal = size / 2.0;
+	if (depth==1) {
+		pos.x=0.0; pos.y=0.0; pos.z=0.0;
+		pyramidList[cpt].size = size*2;
+		pyramidList[cpt].pos = pos;
+	} else {
+		if (depth>2) {
+			computeSierpinski(xc+decal, yc-decal, zc, size, depth-1);
+			computeSierpinski(xc+decal, yc+decal, zc, size, depth-1);
+			computeSierpinski(xc-decal, yc-decal, zc, size, depth-1);
+			computeSierpinski(xc-decal, yc+decal, zc, size, depth-1);
+			computeSierpinski(xc, yc, zc+size, size, depth-1);
+		} else {
+			if (xmax < zc+size) { xmax = zc+size; }
+			pos.x=xc+decal; pos.y=yc-decal; pos.z=zc;
+			pyramidList[cpt].size = size;
+			pyramidList[cpt].pos = pos;
+
+			pos.x=xc+decal; pos.y=yc+decal; pos.z=zc;
+			pyramidList[cpt+1].size = size;
+			pyramidList[cpt+1].pos = pos;
+
+			pos.x=xc-decal; pos.y=yc-decal; pos.z=zc;
+			pyramidList[cpt+2].size = size;
+			pyramidList[cpt+2].pos = pos;
+
+			pos.x=xc-decal; pos.y=yc+decal; pos.z=zc;
+			pyramidList[cpt+3].size = size;
+			pyramidList[cpt+3].pos = pos;
+
+			pos.x=xc; pos.y=yc; pos.z=zc+size;
+			pyramidList[cpt+4].size = size;
+			pyramidList[cpt+4].pos = pos;
+			cpt += 5;
+		}
+	}
+}
+
+
+void displaySierpinski(void) {
+	computeSierpinski(0.0f, 0.0f, 0.0f, 30, sierpinskiDepth);
+	colorizeSierpinski();
 }
 
 
@@ -478,7 +591,7 @@ void drawString(float x, float y, float z, char *text) {
 		glColor3f(1.0, 1.0, 1.0);
 	}
 	glTranslatef(x, y, z);
-	glScalef(0.01, 0.01, 0.01);
+	glScalef(0.008, 0.008, 0.008);
 	for(i=0; i < strlen(text); i++) {
 		glutStrokeCharacter(GLUT_STROKE_MONO_ROMAN, (int)text[i]);
 	}
@@ -488,7 +601,13 @@ void drawString(float x, float y, float z, char *text) {
 
 void drawText(void) {
 	char text1[70], text2[70];
-	sprintf(text1, "Nbr of points: %ld, Max iterations: %d", iterations, maxIter);
+	if (menger) {
+		sprintf(text1, "Nbr of steps: %d, Nbr of cubes: %d", mengerDepth, mengerIter);
+	} else if (sierpinski) {
+		sprintf(text1, "Nbr of steps: %d, Nbr of pyramids: %d", sierpinskiDepth, sierpinskiIter);
+	}else {
+		sprintf(text1, "Nbr of points: %ld, Max iterations: %d", iterations, maxIter);
+	}
 	if (julia) {
 		sprintf(text2, "dt: %1.3f, FPS: %4.2f, cr=%0.3f ci=%0.3f", (dt/1000.0), fps, cr, ci);
 	} else {
@@ -728,6 +847,28 @@ void onKeyboard(unsigned char key, int x, int y) {
 			printf("INFO: saturation color %d\n", saturation);
 			displayFractal();
 			break;
+		case 'a':
+			if (menger) {
+				mengerDepth += 1;
+				if (mengerDepth == 6) { mengerDepth = 1; }
+				xmax = 0;
+				cpt = 0;
+				mengerIter = pow(20, mengerDepth-1);
+				free(cubeList);
+				cubeList = (object*)calloc(mengerIter, sizeof(object));
+				displayMenger();
+			}
+			if (sierpinski) {
+				sierpinskiDepth += 1;
+				if (sierpinskiDepth == 9) { sierpinskiDepth = 1; }
+				xmax = 0;
+				cpt = 0;
+				sierpinskiIter = pow(5, sierpinskiDepth-1);
+				free(pyramidList);
+				pyramidList = (object*)calloc(sierpinskiIter, sizeof(object));
+				displaySierpinski();
+			}
+			break;
 		case 'z':
 			zoom -= 5.0;
 			if (zoom < 5.0) {
@@ -823,7 +964,7 @@ void display(void) {
 	GLfloat ambient1[] = {0.15f, 0.15f, 0.15f, 1.0f};
 	GLfloat diffuse1[] = {0.8f, 0.8f, 0.8f, 1.0f};
 	GLfloat specular1[] = {1.0f, 1.0f, 1.0f, 1.0f};
-	GLfloat position1[] = {0.0f, 0.0f, 0.0f, 1.0f};
+	GLfloat position1[] = {0.0f, 0.0f, 20.0f, 1.0f};
 	glLightfv(GL_LIGHT1, GL_AMBIENT, ambient1);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuse1);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, specular1);
@@ -852,10 +993,16 @@ void display(void) {
 		glDrawArrays(GL_POINTS, 0, iterations);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
-	} else {
+	} else if (menger) {
 		for (i=0; i<mengerIter; i++) {
 			glPushMatrix();
 			drawCube(cubeList[i].pos, cubeList[i].color, cubeList[i].size);
+			glPopMatrix();
+		}
+	} else {
+		for (i=0; i<sierpinskiIter; i++) {
+			glPushMatrix();
+			drawPyramid(pyramidList[i].pos, pyramidList[i].color, pyramidList[i].size);
 			glPopMatrix();
 		}
 	}
@@ -875,7 +1022,7 @@ void init(void) {
 
 	glEnable(GL_LIGHTING);
 
-	GLfloat ambient[] = {0.15f, 0.15f, 0.15f, 1.0f};
+	GLfloat ambient[] = {0.05f, 0.05f, 0.05f, 1.0f};
 	GLfloat diffuse[] = {0.8f, 0.8f, 0.8f, 1.0f};
 	GLfloat specular[] = {1.0f, 1.0f, 1.0f, 1.0f};
 	GLfloat position[] = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -929,11 +1076,16 @@ void glmain(int argc, char *argv[]) {
 	glutTimerFunc(dt, onTimer, 0);
 	glutTimerFunc(dt, update, 0);
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
-	fprintf(stdout, "INFO: Nbr points: %ld\n", iterations);
+	if (menger) {
+		fprintf(stdout, "INFO: Nbr of cubes: %d (%d)\n", cpt, mengerIter);
+	} else {
+		fprintf(stdout, "INFO: Nbr points: %ld\n", iterations);
+	}
 	glutMainLoop();
 	free(colorsList);
 	free(pointsList);
 	free(cubeList);
+	free(pyramidList);
 	glDeleteLists(textList, 1);
 	glDeleteTextures(1, &textureID);
 }
@@ -947,6 +1099,7 @@ void launchDisplay(int argc, char *argv[]) {
 	else if (strcmp(argv[1], "julia") == 0) { julia=1; }
 	else if (strcmp(argv[1], "mandelbulb") == 0) { mandelbulb=1; }
 	else if (strcmp(argv[1], "menger") == 0) { menger=1; }
+	else if (strcmp(argv[1], "sierpinski") == 0) { sierpinski=1; }
 	else {
 		usage();
 		exit(EXIT_FAILURE);
@@ -973,11 +1126,20 @@ void launchDisplay(int argc, char *argv[]) {
 		displayMandelbulb();
 	}
 	if (menger) {
-		mengerDepth = 4;
+		mengerDepth = 1;
+		xmax = 0;
 		cpt = 0;
 		mengerIter = pow(20, mengerDepth-1);
-		cubeList = (cube*)calloc(mengerIter, sizeof(cube));
+		cubeList = (object*)calloc(mengerIter, sizeof(object));
 		displayMenger();
+	}
+	if (sierpinski) {
+		sierpinskiDepth = 1;
+		xmax = 0;
+		cpt = 0;
+		sierpinskiIter = pow(5, sierpinskiDepth-1);
+		pyramidList = (object*)calloc(sierpinskiIter, sizeof(object));
+		displaySierpinski();
 	}
 	glmain(argc, argv);
 }
@@ -986,6 +1148,7 @@ void launchDisplay(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
 	switch (argc) {
 		case 3:
+			help();
 			launchDisplay(argc, argv);
 			exit(EXIT_SUCCESS);
 			break;
