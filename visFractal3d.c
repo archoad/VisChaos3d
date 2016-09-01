@@ -42,9 +42,11 @@ static short winSizeW = 920,
 	fullScreen = 0,
 	rotate = 0, rotColor = 0, rotJulia = 0,
 	saturation = 1,
-	mandelbulb = 0, mandelbrot = 0, julia = 0, menger = 0, sierpinski = 0,
+	mandelbulb = 0, mandelbrot = 0, julia = 0, menger = 0,
+	sierpinski = 0, flame = 0,
 	mengerDepth = 0, sierpinskiDepth = 0,
-	flat = 0, dt = 20; // in milliseconds
+	numOfFlameFunct = 0,
+	dt = 20; // in milliseconds
 
 static int textList = 0,
 	cpt = 0,
@@ -90,10 +92,24 @@ typedef struct _point {
 	GLfloat r, g, b;
 } point;
 
+typedef struct _flamepoint {
+	uint8_t r, g, b;
+	uint16_t counter;
+} flamepoint;
+
+typedef struct _flameFunction {
+	int variation;
+	double weight;
+	double ac, bc, cc, dc, ec, fc;
+	uint8_t r, g, b;
+} flameFunction;
+
+
 static float *colorsList = NULL;
 static point *pointsList = NULL;
 static object *cubeList = NULL;
 static object *pyramidList = NULL;
+static flameFunction *flameFuncList = NULL;
 
 static unsigned long iterations = 0;
 
@@ -101,18 +117,31 @@ static GLuint textureID;
 
 static int mengerRemovals[7] = {4, 10, 12, 13, 14, 16, 22};
 
+static char flameName[14];
+
+
+void textMandel(void) {
+	//source: http://paulbourke.net/fractals/
+	int k=1;
+	float i, j, r, x, y=-16;
+	while(puts(""), y++<15)
+	for(x=0; x++<84; putchar(" abcdefghijklmno"[k&15]))
+	for(i=k=r=0; j=r*r-i*i-2+x/25, i=2*r*i+y/10, j*j+i*i<11&&k++<111; r=j);
+}
+
 
 void usage(void) {
 	couleur("31");
 	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
 	couleur("0");
 	printf("Syntaxe: visFractal3d <fractal> <background color>\n");
-	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger', 'sierpinski' or 'mandelbulb'\n");
+	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger', 'sierpinski', 'flame' or 'mandelbulb'\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
 }
 
 
 void help(void) {
+	textMandel();
 	couleur("31");
 	printf("Michel Dubois -- gravity3d -- (c) 2013\n\n");
 	couleur("0");
@@ -133,6 +162,13 @@ void help(void) {
 	printf("Mouse usage:\n");
 	printf("\t'LEFT CLICK' to zoom into the fractal\n");
 	printf("\n");
+}
+
+
+double genDoubleRandom(double min, double max) {
+	double t = 0.0;
+	t = (max-min) * ((double)rand()/(double)(RAND_MAX)) + min;
+	return(t);
 }
 
 
@@ -220,15 +256,554 @@ void defineNewParameters(int direction) {
 }
 
 
+void contractiveMapping(double *ac, double *bc, double *cc, double *dc, double *ec, double *fc) {
+	// from Paul Bourke
+	double a, b, c, d, e, f;
+	int t;
+	do {
+		do {
+			a = genDoubleRandom(0.0, 1.0);
+			d = genDoubleRandom(a*a, 1);
+			t = rand();
+			if (t&1) d = -d;
+		} while ((a*a + d*d) > 1);
+		do {
+			b = genDoubleRandom(0.0, 1.0);
+			e = genDoubleRandom(b*b, 1);
+			t = rand();
+			if (t&1) e = -e;
+		} while ((b*b + e*e) > 1);
+	} while ((a*a + b*b + d*d + e*e) > (1 + (a*e - d*b) * (a*e - d*b)));
+	c = genDoubleRandom(-2.0, 2.0);
+	f = genDoubleRandom(-2.0, 2.0);
+	*ac=a; *bc=b; *cc=c; *dc=d; *ec=e; *fc=f;
+}
+
+
+double genFlameRand01() {
+	double tmp=0.0;
+	tmp = (rand() & 0xfffffff) / (double) 0xfffffff;
+	return(tmp);
+}
+
+
+double genFlameRand11() {
+	double tmp=0.0;
+	tmp = ((rand() & 0xfffffff) - 0x7ffffff) / (double) 0x7ffffff;
+	return(tmp);
+}
+
+
+void initFlameFunction(void) {
+	int i=0, var=0;
+	var = rand() % 51;
+	for (i=0; i<numOfFlameFunct; i++) {
+		flameFuncList[i].variation = rand() % 51;
+		//flameFuncList[i].variation = var;
+		flameFuncList[i].weight = genFlameRand01();
+		flameFuncList[i].r = (uint8_t)(30 + (rand() % 196));
+		flameFuncList[i].g = (uint8_t)(30 + (rand() % 196));
+		flameFuncList[i].b = (uint8_t)(30 + (rand() % 196));
+		contractiveMapping(&flameFuncList[i].ac, &flameFuncList[i].bc, &flameFuncList[i].cc, &flameFuncList[i].dc, &flameFuncList[i].ec, &flameFuncList[i].fc);
+	}
+}
+
+
+void displayFlame(void) {
+	double tx=0.0, ty=0.0, nx=0.0, ny=0.0,
+	ac=0.0, bc=0.0, cc=0.0, dc=0.0, ec=0.0, fc=0.0;
+	int i=0, endx=0, endy=0;
+	unsigned long iter=0;
+	flamepoint flamePointList[sideLength][sideLength];
+
+	for (endx=0; endx<sideLength; endx++) {
+		for (endy=0; endy<sideLength; endy++) {
+			flamePointList[endx][endy].r = 0;
+			flamePointList[endx][endy].g = 0;
+			flamePointList[endx][endy].b = 0;
+			flamePointList[endx][endy].counter = 0;
+		}
+	}
+
+	cpt = 0;
+	nx = genDoubleRandom(xmin, xmax);
+	ny = genDoubleRandom(ymin, ymax);
+	for (iter=0; iter<iterations; iter++) {
+		i = rand() % numOfFlameFunct;
+		ac = flameFuncList[i].ac;
+		bc = flameFuncList[i].bc;
+		cc = flameFuncList[i].cc;
+		dc = flameFuncList[i].dc;
+		ec = flameFuncList[i].ec;
+		fc = flameFuncList[i].fc;
+
+		tx = ac*nx + bc*ny + cc;
+		ty = dc*nx + ec*ny + fc;
+
+		switch (flameFuncList[i].variation) {
+			case 0:
+				snprintf(flameName, 14, "Linear");
+				nx = tx;
+				ny = ty;
+				break;
+			case 1:
+				snprintf(flameName, 14, "Sinusoidal");
+				nx = sin(tx);
+				ny = sin(ty);
+				break;
+			case 2:
+				snprintf(flameName, 14, "Spherical");
+				double r2 = tx*tx + ty*ty + 1e-6;
+				nx = tx / r2;
+				ny = ty / r2;
+				break;
+			case 3:
+				snprintf(flameName, 14, "Swirl");
+				r2 = tx*tx + ty*ty;
+				double c1 = sin(r2);
+				double c2 = cos(r2);
+				nx = c1*tx - c2*ty;
+				ny = c2*tx + c1*ty;
+				break;
+			case 4:
+				snprintf(flameName, 14, "Horseshoe");
+				double a = atan2(tx, ty);
+				c1 = sin(a);
+				c2 = cos(a);
+				nx = c1*tx - c2*ty;
+				ny = c2*tx + c1*ty;
+				break;
+			case 5:
+				snprintf(flameName, 14, "Polar");
+				nx = atan2(tx, ty) / M_PI;
+				ny = sqrt(tx*tx + ty*ty) - 1.0;
+				break;
+			case 6:
+				snprintf(flameName, 14, "Handkerchief");
+				a = atan2(tx, ty);
+				double r = sqrt(tx*tx + ty*ty);
+				nx = r * sin(a + r);
+				ny = r * cos(a - r);
+				break;
+			case 7:
+				snprintf(flameName, 14, "Heart");
+				r = sqrt(tx*tx + ty*ty);
+				a = atan2(tx, ty);
+				a *= r;
+				nx = r * sin(a);
+				ny = -r * cos(a);
+				break;
+			case 8:
+				snprintf(flameName, 14, "Disc");
+				nx = tx * M_PI;
+				ny = ty * M_PI;
+				a = atan2(nx, ny);
+				r = sqrt(nx*nx + ny*ny);
+				nx = sin(r) * a / M_PI;
+				ny = cos(r) * a / M_PI;
+				break;
+			case 9:
+				snprintf(flameName, 14, "Spiral");
+				a = atan2(tx, ty);
+				r = sqrt(tx*tx + ty*ty) + 1e-6;
+				nx = (cos(a) + sin(r)) / r;
+				ny = (sin(a) - cos(r)) / r;
+				break;
+			case 10:
+				snprintf(flameName, 14, "Hyperbolic");
+				a = atan2(tx, ty);
+				r = sqrt(tx*tx + ty*ty) + 1e-6;
+				nx = sin(a) / r;
+				ny = cos(a) * r;
+				break;
+			case 11:
+				snprintf(flameName, 14, "Diamond");
+				a = atan2(tx, ty);
+				r = sqrt(tx*tx + ty*ty);
+				nx = sin(a) * cos(r);
+				ny = cos(a) * sin(r);
+				break;
+			case 12:
+				snprintf(flameName, 14, "Ex");
+				a = atan2(tx, ty);
+				r = sqrt(tx*tx + ty*ty);
+				double n0 = sin(a+r);
+				double n1 = cos(a-r);
+				double m0 = n0 * n0 * n0 * r;
+				double m1 = n1 * n1 * n1 * r;
+				nx = m0 + m1;
+				ny = m0 - m1;
+				break;
+			case 13:
+				snprintf(flameName, 14, "Julia");
+				a = atan2(tx, ty) / 2.0;
+				if (rand()%2) a += M_PI;
+				r = pow(tx*tx + ty*ty, 0.25);
+				nx = r * cos(a);
+				ny = r * sin(a);
+				break;
+			case 14:
+				snprintf(flameName, 14, "Bent");
+				nx = tx;
+				ny = ty;
+				if (nx<0.0) { nx = nx * 2.0; }
+				if (ny<0.0) { ny = ny / 2.0; }
+				break;
+			case 15:
+				snprintf(flameName, 14, "Waves");
+				nx = tx + bc * sin(ty/((cc*cc) + 1e-10));
+				ny = ty + ec * sin(tx/((fc*fc) + 1e-10));
+				break;
+			case 16:
+				snprintf(flameName, 14, "Fisheye");
+				a = atan2(tx, ty);
+				r = sqrt(tx*tx + ty*ty);
+				r = 2.0 * r / (r + 1.0);
+				nx = r * cos(a);
+				ny = r * sin(a);
+				break;
+			case 17:
+				snprintf(flameName, 14, "Popcorn");
+				double dx = tan(3*ty);
+				double dy = tan(3*tx);
+				nx = tx + cc * sin(dx);
+				ny = ty + fc * sin(dy);
+				break;
+			case 18:
+				snprintf(flameName, 14, "Exponential");
+				dx = exp(tx - 1.0);
+				dy = M_PI * ty;
+				nx = cos(dy) * dx;
+				ny = sin(dy) * dx;
+				break;
+			case 19:
+				snprintf(flameName, 14, "Power");
+				a = atan2(tx, ty);
+				double sa = sin(a);
+				double ca = cos(a);
+				r = sqrt(tx*tx + ty*ty);
+				r = pow(r, sa);
+				nx = r * ca;
+				ny = r * sa;
+				break;
+			case 20:
+				snprintf(flameName, 14, "Cosine");
+				nx = cos(tx * M_PI) * cosh(ty);
+				ny = -sin(tx * M_PI) * sinh(ty);
+				break;
+			case 21:
+				snprintf(flameName, 14, "Rings");
+				dx = cc * cc + 1e-10;
+				r = sqrt(tx*tx + ty*ty);
+				r = fmod(r + dx, 2*dx) - dx + r*(1-dx);
+				a = atan2(tx, ty);
+				nx = cos(a) * r;
+				ny = sin(a) * r;
+				break;
+			case 22:
+				snprintf(flameName, 14, "Fan");
+				dx = M_PI * (cc * cc + 1e-10);
+				double dx2 = dx/2;
+				a = atan2(tx,ty);
+				r = sqrt(tx*tx + ty*ty);
+				a += (fmod(a+fc, dx) > dx2) ? -dx2 : dx2;
+				nx = cos(a) * r;
+				ny = sin(a) * r;
+				break;
+			case 23:
+				snprintf(flameName, 14, "Blob");
+				a = atan2(tx, ty);
+				r = sqrt(tx*tx + ty*ty);
+				double bloblow = genDoubleRandom(0.0, 0.5);
+				double blobhigh = genDoubleRandom(0.5, 1.0);
+				double blobwaves = M_PI / 8.0;
+				r = r * (bloblow + (blobhigh-bloblow) * (0.5 + 0.5 * sin(blobwaves * a)));
+				nx = sin(a) * r;
+				ny = cos(a) * r;
+				break;
+			case 24:
+				snprintf(flameName, 14, "PDJ");
+				double nx1 = cos(genFlameRand11() * tx);
+				double nx2 = sin(genFlameRand11() * tx);
+				double ny1 = sin(genFlameRand11() * ty);
+				double ny2 = cos(genFlameRand11() * ty);
+				nx = ny1 - nx1;
+				ny = nx2 - ny2;
+				break;
+			case 25:
+				snprintf(flameName, 14, "Fan2");
+				a = atan2(tx, ty);
+				r = sqrt(tx*tx + ty*ty);
+				double fan2 = genFlameRand11();
+				dy = genFlameRand11();
+				dx = M_PI * (fan2 * fan2 + 1e-10);
+				dx2 = dx / 2.0;
+				double t = a + dy - dx * (int)((a + dy)/dx);
+				if (t > dx2) { a = a - dx2; }
+				else { a = a + dx2; }
+				nx = sin(a) * r;
+				ny = cos(a) * r;
+				break;
+			case 26:
+				snprintf(flameName, 14, "Rings2");
+				double fx = genFlameRand11();
+				r = sqrt(tx*tx + ty*ty);
+				dx = fx * fx + 1e-10;
+				r += dx - 2.0*dx*(int)((r + dx)/(2.0 * dx)) - dx + r * (1.0-dx);
+				nx = sin(a) * r;
+				ny = cos(a) * r;
+				break;
+			case 27:
+				snprintf(flameName, 14, "Eyefish");
+				r = 2.0 / (sqrt(tx*tx + ty*ty) + 1.0);
+				nx = r * tx;
+				ny = r * ty;
+				break;
+			case 28:
+				snprintf(flameName, 14, "Bubble");
+				r = 4.0 / ((tx*tx + ty*ty) + 4.0);
+				nx = r * tx;
+				ny = r * ty;
+				break;
+			case 29:
+				snprintf(flameName, 14, "Cylinder");
+				nx = sin(tx);
+				ny = ty;
+				break;
+			case 30:
+				snprintf(flameName, 14, "Perspective");
+				double p1 = M_PI_4;
+				double p2 = 2*genFlameRand01() + 1.0;
+				t = p2 / (p2 - ty*sin(p1));
+				nx = t * tx;
+				ny = ty * cos(p1);
+				break;
+			case 31:
+				snprintf(flameName, 14, "Noise");
+				p1 = genFlameRand01();
+				p2 = genFlameRand01();
+				nx = p1 * tx * cos(2*M_PI*p2);
+				ny = p1 * ty * sin(2*M_PI*p2);
+				break;
+			case 32:
+				snprintf(flameName, 14, "JuliaN");
+				a = atan2(ty,tx);
+				r = tx*tx + ty*ty;
+				p1 = 1 + rand() % 7;
+				p2 = genFlameRand01();
+				double p3 = trunc(p1 * genFlameRand01());
+				t = 2*M_PI*p3 + a / p1;
+				r = pow(r, p2/p1);
+				nx = r * cos(t);
+				ny = r * sin(t);
+				break;
+			case 33:
+				snprintf(flameName, 14, "JuliaScope");
+				a = atan2(ty,tx);
+				r = tx*tx + ty*ty;
+				p1 = 1 + rand() % 7;
+				p2 = genFlameRand01();
+				p3 = trunc(p1 * genFlameRand01());
+				if (rand()%2) { t = 2*M_PI*p3 + a / p1; } else { t = 2*M_PI*p3 - a / p1; }
+				r = pow(r, p2/p1);
+				nx = r * cos(t);
+				ny = r * sin(t);
+				break;
+			case 34:
+				snprintf(flameName, 14, "Blur");
+				p1 = genFlameRand01();
+				p2 = genFlameRand01() * 2 * M_PI;
+				nx = p1 * cos(p2);
+				ny = p1 * sin(p2);
+				break;
+			case 35:
+				snprintf(flameName, 14, "Gaussian");
+				r = genFlameRand01() + genFlameRand01() + genFlameRand01() + genFlameRand01() - 2.0;
+				p1 = genFlameRand01() * 2 * M_PI;
+				nx = r * cos(p1);
+				ny = r * sin(p1);
+				break;
+			case 36:
+				snprintf(flameName, 14, "RadialBlur");
+				t = genFlameRand01() + genFlameRand01() + genFlameRand01() + genFlameRand01() - 2.0;
+				r = sqrt(tx*tx + ty*ty);
+				a = atan2(ty,tx);
+				p1 = M_PI/8.0 * M_PI/2.0;
+				p2 = a + t * p1;
+				p3 = t * p1 -1.0;
+				nx = r*cos(p2) + p3*tx;
+				ny = r*sin(p2) + p3*ty;
+				break;
+			case 37:
+				snprintf(flameName, 14, "Pie");
+				p1 = 10.0*genFlameRand01(); // slices
+				p2 = 2.0 * M_PI * genFlameRand11(); // rotation
+				p3 = genFlameRand01(); // thickness
+				t = (int)(genFlameRand01() * p1 + 0.5);
+				a = p2 + 2.0 * M_PI * (t + genFlameRand01() * p3) / p1;
+				r = genFlameRand01();
+				nx = r * cos(a);
+				ny = r * sin(a);
+				break;
+			case 38:
+				snprintf(flameName, 14, "Ngon");
+				p1 = 3*genFlameRand01() + 1; // power
+				p2 = 2*M_PI / (10*genFlameRand01() + 3); // sides
+				p3 = 2*genFlameRand01(); // corners
+				double p4 = 3*genFlameRand01(); // circle
+				double theta = atan2(ty,tx);
+				t = theta - (p2 * floor(theta / p2));
+				if (t > p2 / 2) { r = t; } else { r = t - p2; }
+				r = (1.0 / cos(r)) - 1;
+				double k = (p3*r + p4) / pow(tx*tx + ty*ty, p1);
+				nx = k * tx;
+				ny = k * ty;
+				break;
+			case 39:
+				snprintf(flameName, 14, "Tangent");
+				nx = sin(tx) / cos(ty);
+				ny = tan(ty);
+				break;
+			case 40:
+				snprintf(flameName, 14, "Square");
+				p1 = genFlameRand01();
+				p2 = genFlameRand01();
+				nx = p1 - 0.5;
+				ny = p2 - 0.5;
+			case 41:
+				snprintf(flameName, 14, "Rays");
+				t = genFlameRand01() * M_PI;
+				r = 1.0 / (tx*tx + ty*ty + 1e-10);
+				p1 = tan(t) * r;
+				nx = p1 * cos(tx);
+				ny = p1 * sin(ty);
+				break;
+			case 42:
+				snprintf(flameName, 14, "Blade");
+				r = genFlameRand01() * sqrt(tx*tx + ty*ty);
+				nx = tx * (cos(r) + sin(r));
+				ny = tx * (cos(r) - sin(r));
+			case 43:
+				snprintf(flameName, 14, "Twintrian");
+				r = genFlameRand01() * sqrt(tx*tx + ty*ty);
+				p1 = cos(r);
+				p2 = sin(r);
+				t = log10(p2*p2)+p1;
+				nx = tx * t;
+				ny = tx * (t - p2*M_PI);
+				break;
+			case 44:
+				snprintf(flameName, 14, "Cross");
+				t = tx*tx - ty*ty;
+				r = sqrt(1.0 / (t*t+1e-10));
+				nx = tx * r;
+				ny = ty * r;
+				break;
+			case 45:
+				snprintf(flameName, 14, "Flower");
+				a = atan2(ty,tx);
+				r = genFlameRand01() - genFlameRand01() * cos(4*a*genFlameRand01()) / sqrt(tx*tx + ty*ty);
+				nx = r * tx;
+				ny = r * ty;
+				break;
+			case 46:
+				snprintf(flameName, 14, "Butterfly");
+				t = 1.3029400317411197908970256609023;
+				p1 = ty * 2.0;
+				r = t * sqrt(fabs(ty*tx)/(1e-10 + tx*tx + p1*p1));
+				nx = r * tx;
+				ny = r * p1;
+				break;
+			case 47:
+				snprintf(flameName, 14, "Escher");
+				a = atan2(ty,tx);
+				r = 0.5 * log(tx*tx + ty*ty);
+				t = M_PI * genFlameRand11();
+				double vc = 0.5 * (1.0 + cos(t));
+				double vd = 0.5 * sin(t);
+				double m = exp(vc*r - vd*a);
+				double n = vc*a + vd*r;
+				nx = m * cos(n);
+				ny = m * sin(n);
+				break;
+			case 48:
+				snprintf(flameName, 14, "Popcorn2");
+				t = 5 * genFlameRand01();
+				nx = tx * genFlameRand01() * sin(tan(ty*t));
+				ny = ty * genFlameRand01() * sin(tan(tx*t));
+				break;
+			case 49:
+				snprintf(flameName, 14, "Log");
+				nx = 0.5 * log(tx*tx + ty*ty);
+				ny = atan2(ty,tx);
+				break;
+			case 50:
+				snprintf(flameName, 14, "Mobius");
+				double rea = genFlameRand11();
+				double reb = genFlameRand11();
+				double rec = genFlameRand11();
+				double red = genFlameRand11();
+				double ima = genFlameRand11();
+				double imb = genFlameRand11();
+				double imc = genFlameRand11();
+				double imd = genFlameRand11();
+				double reu = rea * tx - ima * ty + reb;
+				double imu = rea * ty + ima * tx + imb;
+				double rev = rec * tx - imc * ty + red;
+				double imv = rec * ty + imc * tx + imd;
+				double radv = 1.0 / (rev*rev + imv*imv);
+				nx = radv * (reu*rev + imu*imv);
+				ny = radv * (imu*rev - reu*imv);
+				break;
+			default:
+				break;
+		}
+		if (iter>20) {
+			if ((nx>=xmin) && (nx<=xmax) && (ny>=ymin) && (ny<=ymax)) {
+				endx = (sideLength/2) - (int)((nx * sideLength) / (xmax - xmin));
+				endy = (sideLength/2) - (int)((ny * sideLength) / (ymax - ymin));
+
+				if (!flamePointList[endx][endy].counter) {
+					flamePointList[endx][endy].r = flameFuncList[i].r;
+					flamePointList[endx][endy].g = flameFuncList[i].g;
+					flamePointList[endx][endy].b = flameFuncList[i].b;
+				} else {
+					flamePointList[endx][endy].r = (flamePointList[endx][endy].r + flameFuncList[i].r) / 2.0;
+					flamePointList[endx][endy].g = (flamePointList[endx][endy].g + flameFuncList[i].g) / 2.0;
+					flamePointList[endx][endy].b = (flamePointList[endx][endy].b + flameFuncList[i].b) / 2.0;
+				}
+				flamePointList[endx][endy].counter++;
+				cpt++;
+			}
+		}
+	}
+	iter=0;
+	for (endx=0; endx<sideLength; endx++) {
+		for (endy=0; endy<sideLength; endy++) {
+			if (flamePointList[endx][endy].r != 0) {
+				pointsList[iter].r = flamePointList[endx][endy].r / 255.0;
+				pointsList[iter].g = flamePointList[endx][endy].g / 255.0;
+				pointsList[iter].b = flamePointList[endx][endy].b / 255.0;
+				pointsList[iter].x = (endx - (sideLength/2)) / (sideLength/50.0);
+				pointsList[iter].y = 0.0;
+				pointsList[iter].z = (endy - (sideLength/2)) / (sideLength/50.0);
+				iter++;
+			}
+		}
+	}
+}
+
+
 void displayFractal(void) {
 	// https://rosettacode.org/wiki/Mandelbrot_set
 	// https://rosettacode.org/wiki/Julia_set
 	unsigned long cpt=0, cur=0;
 	int i=0, j=0, iter=0, min=0, max=0;
 	double x=0, y=0, zr=0, zi=0, zr2=0, zi2=0, tmp=0;
-	float hue=0, val=0;
+	float hue=0.0, val=0.0;
 	float hueList[iterations];
 
+	cpt = 0;
 	min=maxIter; max=0;
 	for (j=0; j<sideLength; j++) {
 		y = ((ymax-ymin) * j / sideLength) + cy;
@@ -333,6 +908,7 @@ void displayMandelbulb(void) {
 				hue = 0.0;
 			}
 			hsv2rgb(hue, 0.75, 0.9, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
+
 			pointsList[i].x = x * 10.0;
 			pointsList[i].y = y * 10.0;
 			pointsList[i].z = z * 10.0;
@@ -605,11 +1181,15 @@ void drawText(void) {
 		sprintf(text1, "Nbr of steps: %d, Nbr of cubes: %d", mengerDepth, mengerIter);
 	} else if (sierpinski) {
 		sprintf(text1, "Nbr of steps: %d, Nbr of pyramids: %d", sierpinskiDepth, sierpinskiIter);
-	}else {
+	}else if (flame) {
+		sprintf(text1, "Iterations: %ld, Displayed points: %d", iterations, cpt);
+	} else {
 		sprintf(text1, "Nbr of points: %ld, Max iterations: %d", iterations, maxIter);
 	}
 	if (julia) {
 		sprintf(text2, "dt: %1.3f, FPS: %4.2f, cr=%0.3f ci=%0.3f", (dt/1000.0), fps, cr, ci);
+	} else if (flame) {
+		sprintf(text2, "dt: %1.3f, FPS: %4.2f, Flame variation: %s", (dt/1000.0), fps, flameName);
 	} else {
 		sprintf(text2, "dt: %1.3f, FPS: %4.2f", (dt/1000.0), fps);
 	}
@@ -676,7 +1256,7 @@ void drawAxes(void) {
 		width = 100 * 0.5,
 		thickness = 0.8;
 	glPushMatrix();
-	if (flat) {
+	if ((mandelbrot) || (julia) || (flame)) {
 		drawBox(pos, color, height, width, thickness);
 	} else {
 		glLineWidth(1.0);
@@ -765,17 +1345,21 @@ void onMouse(int button, int state, int x, int y) {
 		case GLUT_LEFT_BUTTON:
 			if (state == GLUT_DOWN) { // increase
 				printf("INFO: left button, x %d, y %d\n", x, y);
-				getWorldPos(x, y);
-				defineNewParameters(1);
-				displayFractal();
+				if ((mandelbrot) || (julia)) {
+					getWorldPos(x, y);
+					defineNewParameters(1);
+					if ((mandelbrot) || (julia)) { displayFractal(); }
+				}
 			}
 			break;
 		case GLUT_RIGHT_BUTTON:
 			if (state == GLUT_DOWN) { // decrease
 				printf("INFO: right button, x %d, y %d\n", x, y);
-				getWorldPos(x, y);
-				defineNewParameters(0);
-				displayFractal();
+				if ((mandelbrot) || (julia)) {
+					getWorldPos(x, y);
+					defineNewParameters(0);
+					if ((mandelbrot) || (julia)) { displayFractal(); }
+				}
 			}
 			break;
 	}
@@ -791,13 +1375,13 @@ void onKeyboard(unsigned char key, int x, int y) {
 			exit(0);
 			break;
 		case 8: // BackSpace
-			if (flat) {
+			if ((mandelbrot) || (julia)) {
 				xmin=-2.0; xmax=2.0;
 				ymin=-2.0; ymax=2.0;
 				cx=xmin; cy=ymin;
 				maxIter = 128;
 				winPosx = 20; winPosy = 20;
-				displayFractal();
+				if ((mandelbrot) || (julia)) { displayFractal(); }
 			}
 			break;
 		case 'x':
@@ -841,11 +1425,21 @@ void onKeyboard(unsigned char key, int x, int y) {
 				rotJulia = !rotJulia;
 				printf("INFO: rotate Julia %d\n", rotJulia);
 			}
+			if (flame) {
+				free(flameFuncList);
+				free(pointsList);
+				flameFuncList = (flameFunction*)calloc(numOfFlameFunct, sizeof(flameFunction));
+				pointsList = (point*)calloc(iterations, sizeof(point));
+				initFlameFunction();
+				displayFlame();
+			}
 			break;
 		case 's':
-			saturation = 1 - saturation;
-			printf("INFO: saturation color %d\n", saturation);
-			displayFractal();
+			if ((mandelbrot) || (julia)) {
+				saturation = 1 - saturation;
+				printf("INFO: saturation color %d\n", saturation);
+				displayFractal();
+			}
 			break;
 		case 'a':
 			if (menger) {
@@ -924,7 +1518,7 @@ void update(int value) {
 			break;
 	}
 	if (rotColor) {
-		if (flat) {
+		if ((mandelbrot) || (julia)) {
 			for (i=0; i<iterations*4; i+=4) {
 				temp = rgb2hsv(colorsList[i], colorsList[i+1], colorsList[i+2]);
 				hsv2rgb(temp.x+0.01, 0.75, 0.9, &colorsList[i], &colorsList[i+1], &colorsList[i+2]);
@@ -964,7 +1558,7 @@ void display(void) {
 	GLfloat ambient1[] = {0.15f, 0.15f, 0.15f, 1.0f};
 	GLfloat diffuse1[] = {0.8f, 0.8f, 0.8f, 1.0f};
 	GLfloat specular1[] = {1.0f, 1.0f, 1.0f, 1.0f};
-	GLfloat position1[] = {0.0f, 0.0f, 20.0f, 1.0f};
+	GLfloat position1[] = {0.0f, 0.0f, 24.0f, 1.0f};
 	glLightfv(GL_LIGHT1, GL_AMBIENT, ambient1);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuse1);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, specular1);
@@ -973,7 +1567,7 @@ void display(void) {
 
 	drawAxes();
 
-	if (flat) {
+	if ((mandelbrot) || (julia)) {
 		glEnable(GL_TEXTURE_2D);
 		glGenTextures(1, &textureID);
 		drawTexture();
@@ -985,7 +1579,7 @@ void display(void) {
 		glEnd();
 		glDisable(GL_TEXTURE_2D);
 		drawWindow(winPosx, winPosy);
-	} else if (mandelbulb) {
+	} else if ((mandelbulb) || (flame)) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
@@ -1086,12 +1680,14 @@ void glmain(int argc, char *argv[]) {
 	free(pointsList);
 	free(cubeList);
 	free(pyramidList);
+	free(flameFuncList);
 	glDeleteLists(textList, 1);
 	glDeleteTextures(1, &textureID);
 }
 
 
 void launchDisplay(int argc, char *argv[]) {
+	srand(time(NULL));
 	if (!strncmp(argv[2], "white", 5)) {
 		background = 1;
 	}
@@ -1100,12 +1696,12 @@ void launchDisplay(int argc, char *argv[]) {
 	else if (strcmp(argv[1], "mandelbulb") == 0) { mandelbulb=1; }
 	else if (strcmp(argv[1], "menger") == 0) { menger=1; }
 	else if (strcmp(argv[1], "sierpinski") == 0) { sierpinski=1; }
+	else if (strcmp(argv[1], "flame") == 0) { flame=1; }
 	else {
 		usage();
 		exit(EXIT_FAILURE);
 	}
 	if ((mandelbrot) || (julia)) {
-		flat = 1;
 		xmin=-2.0; xmax=2.0;
 		ymin=-2.0; ymax=2.0;
 		cx=xmin, cy=ymin,
@@ -1140,6 +1736,17 @@ void launchDisplay(int argc, char *argv[]) {
 		sierpinskiIter = pow(5, sierpinskiDepth-1);
 		pyramidList = (object*)calloc(sierpinskiIter, sizeof(object));
 		displaySierpinski();
+	}
+	if (flame) {
+		numOfFlameFunct = 16;
+		sideLength = 1150;
+		xmin=-2.0; xmax=2.0;
+		ymin=-2.0; ymax=2.0;
+		iterations = sideLength * sideLength;
+		flameFuncList = (flameFunction*)calloc(numOfFlameFunct, sizeof(flameFunction));
+		pointsList = (point*)calloc(iterations, sizeof(point));
+		initFlameFunction();
+		displayFlame();
 	}
 	glmain(argc, argv);
 }
