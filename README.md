@@ -6,4 +6,9 @@ Visualizing Chaos functions in 3D
 
 VisMandel3d
 ===========
-Visualizing mandelbrot in 2d and mandelbulb in 3d
+Visualizing some fractals in 3D like:
+
+- mandelbrot and julia set
+- mandelbulb
+- menger and sierpinski
+- flame

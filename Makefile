@@ -13,13 +13,16 @@ ifeq ($(UNAME_S),Linux)
 	IFLAGSDIR= -I/usr/include
 	LFLAGSDIR= -L/usr/lib
 	COMPIL=$(CC)
+	GL_FLAGS= -lGL -lGLU -lglut
 endif
 ifeq ($(UNAME_S),Darwin)
 	IFLAGSDIR= -I/opt/local/include
 	LFLAGSDIR= -L/opt/local/lib
 	COMPIL=$(CL)
+	GL_FLAGS= -lGL -lGLU -lglut
+	#GL_FLAGS= -framework OpenGL -framework GLUT -framework Cocoa
 endif
-GL_FLAGS= -lGL -lGLU -lglut
+
 MATH_FLAGS= -lm
 PNG_FLAGS= -lpng
 
