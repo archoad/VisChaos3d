@@ -4,7 +4,7 @@ VisChaos3d
 Visualizing Chaos functions in 3D
 
 
-VisMandel3d
+VisFractal3d
 ===========
 Visualizing some fractals in 3D like:
 
