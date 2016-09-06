@@ -32,6 +32,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 
 #define WINDOW_TITLE_PREFIX "visFractal3d"
 #define MAX_SIDE_LENGTH 2000
+#define ITERATIONS MAX_SIDE_LENGTH*MAX_SIDE_LENGTH
 #define couleur(param) printf("\033[%sm",param)
 #define N_ELEMENTS(array) (sizeof(array)/sizeof((array)[0]))
 
@@ -44,7 +45,7 @@ static short winSizeW = 920,
 	rotate = 0, rotColor = 0, rotJulia = 0,
 	saturation = 1,
 	mandelbulb = 0, mandelbrot = 0, julia = 0, menger = 0,
-	sierpinski = 0, flame = 0,
+	sierpinski = 0, flame = 0, flame3d = 0,
 	mengerDepth = 0, sierpinskiDepth = 0,
 	numOfFlameFunct = 0,
 	dt = 20; // in milliseconds
@@ -73,7 +74,7 @@ static double pas=0.0,
 	ymin=0.0, ymax=0.0,
 	cx=0.0, cy=0.0,
 	power=0.0,
-	cr=0, ci=0,
+	cr=0.0, ci=0.0,
 	juliaA=0.0,
 	juliaR=0.7885,
 	pi=3.14159265359;
@@ -91,6 +92,7 @@ typedef struct _object {
 typedef struct _point {
 	GLfloat x, y, z;
 	GLfloat r, g, b;
+	int counter;
 } point;
 
 typedef struct _flamepoint {
@@ -137,7 +139,7 @@ void usage(void) {
 	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
 	couleur("0");
 	printf("Syntaxe: visFractal3d <fractal> <background color>\n");
-	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger', 'sierpinski', 'flame' or 'mandelbulb'\n");
+	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger', 'sierpinski', 'flame', 'flame3d' or 'mandelbulb'\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
 }
 
@@ -205,6 +207,136 @@ void hsv2rgb(float h, float s, float v, GLfloat *r, GLfloat *g, GLfloat *b) {
 	else if (i == 3) { *r=v1; *g=v2; *b=v; }
 	else if (i == 4) { *r=v3; *g=v1; *b=v; }
 	else { *r=v; *g=v1; *b=v2; }
+}
+
+
+void gaussianBlur(int gaussSize) {
+	unsigned long cur=0;
+	int i=0, j=0, k=0, gaussSum=0, decal;
+	double sumr=0.0, sumg=0.0, sumb=0.0;
+	int *gaussFactor=NULL;
+	static vector matrixPoint[MAX_SIDE_LENGTH][MAX_SIDE_LENGTH];
+
+	gaussFactor = (int *)calloc(gaussSize, sizeof(int));
+	switch (gaussSize) {
+		case 3:
+			gaussFactor[0]=1; gaussFactor[1]=2; gaussFactor[2]=1;
+			gaussSum=4;
+			break;
+		case 5:
+			gaussFactor[0]=1; gaussFactor[1]=4; gaussFactor[2]=6;
+			gaussFactor[3]=4; gaussFactor[4]=1;
+			gaussSum=16;
+			break;
+		case 7:
+			gaussFactor[0]=1; gaussFactor[1]=6; gaussFactor[2]=15;
+			gaussFactor[3]=20; gaussFactor[4]=15; gaussFactor[5]=6;
+			gaussFactor[6]=1;
+			gaussSum=64;
+			break;
+		case 9:
+			gaussFactor[0]=1; gaussFactor[1]=8; gaussFactor[2]=28;
+			gaussFactor[3]=56; gaussFactor[4]=70; gaussFactor[5]=56;
+			gaussFactor[6]=28; gaussFactor[7]=8; gaussFactor[8]=1;
+			gaussSum=256;
+			break;
+		case 11:
+			gaussFactor[0]=1; gaussFactor[1]=10; gaussFactor[2]=45;
+			gaussFactor[3]=120; gaussFactor[4]=210; gaussFactor[5]=252;
+			gaussFactor[6]=210; gaussFactor[7]=120; gaussFactor[8]=45;
+			gaussFactor[9]=10; gaussFactor[10]=1;
+			gaussSum=1024;
+			break;
+		case 13:
+			gaussFactor[0]=1; gaussFactor[1]=12; gaussFactor[2]=66;
+			gaussFactor[3]=220; gaussFactor[4]=495; gaussFactor[5]=792;
+			gaussFactor[6]=924; gaussFactor[7]=792; gaussFactor[8]=495;
+			gaussFactor[9]=220; gaussFactor[10]=66; gaussFactor[11]=12;
+			gaussFactor[12]=1;
+			gaussSum=4096;
+			break;
+		default:
+			gaussFactor[0]=1; gaussFactor[1]=2; gaussFactor[2]=1;
+			gaussSum=4;
+			break;
+	}
+
+	cur=0;
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			if (mandelbrot || julia) {
+				matrixPoint[i][j].x = colorsList[cur];
+				matrixPoint[i][j].y = colorsList[cur+1];
+				matrixPoint[i][j].z = colorsList[cur+2];
+				cur+=3;
+			}
+			if (flame) {
+				matrixPoint[i][j].x = pointsList[cur].r;
+				matrixPoint[i][j].y = pointsList[cur].g;
+				matrixPoint[i][j].z = pointsList[cur].b;
+				cur++;
+			}
+		}
+	}
+
+	// horizontal blur
+	decal = gaussSize/2;
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			sumr=0; sumg=0; sumb=0;
+			for(k=0; k<gaussSize; k++){
+				if (j+k<sideLength) {
+					sumr += matrixPoint[i][j+k].x * gaussFactor[k];
+					sumg += matrixPoint[i][j+k].y * gaussFactor[k];
+					sumb += matrixPoint[i][j+k].z * gaussFactor[k];
+				}
+			}
+			if (j+decal<sideLength) {
+				matrixPoint[i][j+decal].x = (float)sumr / (float)gaussSum;
+				matrixPoint[i][j+decal].y = (float)sumg / (float)gaussSum;
+				matrixPoint[i][j+decal].z = (float)sumb / (float)gaussSum;
+			}
+		}
+	}
+
+	// vertical blur
+	decal = gaussSize/2;
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			sumr=0; sumg=0; sumb=0;
+			for(k=0; k<gaussSize; k++){
+				if (i+k<sideLength) {
+					sumr += matrixPoint[i+k][j].x * gaussFactor[k];
+					sumg += matrixPoint[i+k][j].y * gaussFactor[k];
+					sumb += matrixPoint[i+k][j].z * gaussFactor[k];
+				}
+			}
+			if (i+decal<sideLength) {
+				matrixPoint[i+decal][j].x = (float)sumr / (float)gaussSum;
+				matrixPoint[i+decal][j].y = (float)sumg / (float)gaussSum;
+				matrixPoint[i+decal][j].z = (float)sumb / (float)gaussSum;
+			}
+		}
+	}
+
+	cur=0;
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			if (mandelbrot || julia) {
+				colorsList[cur] = matrixPoint[i][j].x;
+				colorsList[cur+1] = matrixPoint[i][j].y;
+				colorsList[cur+2] = matrixPoint[i][j].z;
+				cur+=3;
+			}
+			if (flame) {
+				pointsList[cur].r = matrixPoint[i][j].x;
+				pointsList[cur].g = matrixPoint[i][j].y;
+				pointsList[cur].b = matrixPoint[i][j].z;
+				cur++;
+			}
+		}
+	}
+	free(gaussFactor);
 }
 
 
@@ -763,7 +895,7 @@ void displayFlame(void) {
 				break;
 		}
 		if (iter>20) {
-			if ((nx>=xmin) && (nx<=xmax) && (ny>=ymin) && (ny<=ymax)) {
+			if (nx>=xmin && nx<=xmax && ny>=ymin && ny<=ymax) {
 				endx = (sideLength/2) - (int)((nx * sideLength) / (xmax - xmin));
 				endy = (sideLength/2) - (int)((ny * sideLength) / (ymax - ymin));
 
@@ -786,77 +918,81 @@ void displayFlame(void) {
 	verticesList = (float *)calloc(iterations*18, sizeof(float));
 	colorsList = (float *)calloc(iterations*18, sizeof(float));
 	iter=0;
-	for (endx=0; endx<sideLength-1; endx++) {
-		for (endy=0; endy<sideLength-1; endy++) {
-			hsv2rgb(
-				(float)flamePointList[endx][endy].h,
-				(float)flamePointList[endx][endy].s,
-				(float)flamePointList[endx][endy].v,
-				&colorsList[iter], &colorsList[iter+1], &colorsList[iter+2]);
-			hsv2rgb(
-				(float)flamePointList[endx+1][endy].h,
-				(float)flamePointList[endx+1][endy].s,
-				(float)flamePointList[endx+1][endy].v,
-				&colorsList[iter+3], &colorsList[iter+4], &colorsList[iter+5]);
-			hsv2rgb(
-				(float)flamePointList[endx][endy+1].h,
-				(float)flamePointList[endx][endy+1].s,
-				(float)flamePointList[endx][endy+1].v,
-				&colorsList[iter+6], &colorsList[iter+7], &colorsList[iter+8]);
+	for (endx=0; endx<sideLength; endx++) {
+		for (endy=0; endy<sideLength; endy++) {
+			if (flame3d) {
+				hsv2rgb(
+					(float)flamePointList[endx][endy].h,
+					(float)flamePointList[endx][endy].s,
+					(float)flamePointList[endx][endy].v,
+					&colorsList[iter], &colorsList[iter+1], &colorsList[iter+2]);
+				hsv2rgb(
+					(float)flamePointList[endx+1][endy].h,
+					(float)flamePointList[endx+1][endy].s,
+					(float)flamePointList[endx+1][endy].v,
+					&colorsList[iter+3], &colorsList[iter+4], &colorsList[iter+5]);
+				hsv2rgb(
+					(float)flamePointList[endx][endy+1].h,
+					(float)flamePointList[endx][endy+1].s,
+					(float)flamePointList[endx][endy+1].v,
+					&colorsList[iter+6], &colorsList[iter+7], &colorsList[iter+8]);
 
-			hsv2rgb(
-				(float)flamePointList[endx+1][endy].h,
-				(float)flamePointList[endx+1][endy].s,
-				(float)flamePointList[endx+1][endy].v,
-				&colorsList[iter+9], &colorsList[iter+10], &colorsList[iter+11]);
-			hsv2rgb(
-				(float)flamePointList[endx+1][endy+1].h,
-				(float)flamePointList[endx+1][endy+1].s,
-				(float)flamePointList[endx+1][endy+1].v,
-				&colorsList[iter+12], &colorsList[iter+13], &colorsList[iter+14]);
-			hsv2rgb(
-				(float)flamePointList[endx][endy+1].h,
-				(float)flamePointList[endx][endy+1].s,
-				(float)flamePointList[endx][endy+1].v,
-				&colorsList[iter+15], &colorsList[iter+16], &colorsList[iter+17]);
+				hsv2rgb(
+					(float)flamePointList[endx+1][endy].h,
+					(float)flamePointList[endx+1][endy].s,
+					(float)flamePointList[endx+1][endy].v,
+					&colorsList[iter+9], &colorsList[iter+10], &colorsList[iter+11]);
+				hsv2rgb(
+					(float)flamePointList[endx+1][endy+1].h,
+					(float)flamePointList[endx+1][endy+1].s,
+					(float)flamePointList[endx+1][endy+1].v,
+					&colorsList[iter+12], &colorsList[iter+13], &colorsList[iter+14]);
+				hsv2rgb(
+					(float)flamePointList[endx][endy+1].h,
+					(float)flamePointList[endx][endy+1].s,
+					(float)flamePointList[endx][endy+1].v,
+					&colorsList[iter+15], &colorsList[iter+16], &colorsList[iter+17]);
 
-			verticesList[iter] = (endx - (sideLength/2)) / (sideLength/50.0);
-			//verticesList[iter+1] = flamePointList[endx][endy].counter / -80.0;
-			verticesList[iter+1] = flamePointList[endx][endy].h*-2;
-			verticesList[iter+2] = (endy - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter] = (endx - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+1] = flamePointList[endx][endy].h*-2;
+				verticesList[iter+2] = (endy - (sideLength/2)) / (sideLength/50.0);
 
-			verticesList[iter+3] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
-			verticesList[iter+4] = flamePointList[endx+1][endy].h*-2;
-			verticesList[iter+5] = (endy - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+3] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+4] = flamePointList[endx+1][endy].h*-2;
+				verticesList[iter+5] = (endy - (sideLength/2)) / (sideLength/50.0);
 
-			verticesList[iter+6] = (endx - (sideLength/2)) / (sideLength/50.0);
-			verticesList[iter+7] = flamePointList[endx][endy+1].h*-2;
-			verticesList[iter+8] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+6] = (endx - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+7] = flamePointList[endx][endy+1].h*-2;
+				verticesList[iter+8] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
 
-			verticesList[iter+9] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
-			verticesList[iter+10] = flamePointList[endx+1][endy].h*-2;
-			verticesList[iter+11] = (endy - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+9] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+10] = flamePointList[endx+1][endy].h*-2;
+				verticesList[iter+11] = (endy - (sideLength/2)) / (sideLength/50.0);
 
-			verticesList[iter+12] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
-			verticesList[iter+13] = flamePointList[endx+1][endy+1].h*-2;
-			verticesList[iter+14] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+12] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+13] = flamePointList[endx+1][endy+1].h*-2;
+				verticesList[iter+14] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
 
-			verticesList[iter+15] = (endx - (sideLength/2)) / (sideLength/50.0);
-			verticesList[iter+16] = flamePointList[endx][endy+1].h*-2;
-			verticesList[iter+17] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
-			iter+=18;
+				verticesList[iter+15] = (endx - (sideLength/2)) / (sideLength/50.0);
+				verticesList[iter+16] = flamePointList[endx][endy+1].h*-2;
+				verticesList[iter+17] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
+				iter+=18;
+			}
 
-			/*
-			pointsList[iter].r = *r;
-			pointsList[iter].g = *g;
-			pointsList[iter].b = *b;
-			pointsList[iter].x = (endx - (sideLength/2)) / (sideLength/50.0);
-			pointsList[iter].y = 0.0;
-			pointsList[iter].z = (endy - (sideLength/2)) / (sideLength/50.0);
-			iter++;
-			*/
+			if (flame) {
+				hsv2rgb(
+					(float)flamePointList[endx][endy].h,
+					(float)flamePointList[endx][endy].s,
+					(float)flamePointList[endx][endy].v,
+					&pointsList[iter].r, &pointsList[iter].g, &pointsList[iter].b);
+				pointsList[iter].x = (endx - (sideLength/2)) / (sideLength/50.0);
+				pointsList[iter].y = 0.0;
+				pointsList[iter].z = (endy - (sideLength/2)) / (sideLength/50.0);
+				iter++;
+			}
 		}
 	}
+	gaussianBlur(13);
 }
 
 
@@ -867,7 +1003,7 @@ void displayFractal(void) {
 	int i=0, j=0, iter=0, min=0, max=0;
 	double x=0, y=0, zr=0, zi=0, zr2=0, zi2=0, tmp=0;
 	float hue=0.0, val=0.0;
-	float hueList[iterations];
+	static float hueList[ITERATIONS];
 
 	cpt = 0;
 	min=maxIter; max=0;
@@ -905,8 +1041,8 @@ void displayFractal(void) {
 	}
 	cpt = 0;
 	cur = 0;
-	for (j=0; j<sideLength; j++) {
-		for (i=0; i<sideLength; i++) {
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
 			hue = hueList[cpt];
 			if (!saturation) {
 				val = (float)(max-hue) / (float)(max-min);
@@ -917,11 +1053,11 @@ void displayFractal(void) {
 				hue = (hue+min) / (float)(max - min);
 				hsv2rgb(hue, saturation, 1.0, &colorsList[cur], &colorsList[cur+1], &colorsList[cur+2]);
 			}
-			colorsList[cur+3] = 1.0;
 			cpt++;
-			cur+=4;
+			cur+=3;
 		}
 	}
+	gaussianBlur(3);
 }
 
 
@@ -964,11 +1100,11 @@ void displayMandelbulb(void) {
 	for (i=0; i<iterations; i++) {
 		m = computeMandelbulb(x, y, z, maxIter, power);
 		if (m >= maxIter) {
-			if ((x>y) && (x>z)) {
+			if (x>y && x>z) {
 				hue = (float)x / (float)xmax;
-			} else if ((y>x) && (y>z)) {
+			} else if (y>x && y>z) {
 				hue = (float)y / (float)xmax;
-			} else if ((z>x) && (z>y)) {
+			} else if (z>x && z>y) {
 				hue = (float)z / (float)xmax;
 			} else {
 				hue = 0.0;
@@ -980,7 +1116,7 @@ void displayMandelbulb(void) {
 			pointsList[i].z = z * 10.0;
 		}
 		x += pas;
-		if ((i!=0) && (i%sideLength==0)) {
+		if (i!=0 && i%sideLength==0) {
 			x = xmin;
 			z += pas;
 			if (z>xmax) {
@@ -1247,14 +1383,14 @@ void drawText(void) {
 		sprintf(text1, "Nbr of steps: %d, Nbr of cubes: %d", mengerDepth, mengerIter);
 	} else if (sierpinski) {
 		sprintf(text1, "Nbr of steps: %d, Nbr of pyramids: %d", sierpinskiDepth, sierpinskiIter);
-	}else if (flame) {
+	}else if (flame || flame3d) {
 		sprintf(text1, "Iterations: %ld, Displayed points: %d", iterations, cpt);
 	} else {
 		sprintf(text1, "Nbr of points: %ld, Max iterations: %d", iterations, maxIter);
 	}
 	if (julia) {
 		sprintf(text2, "dt: %1.3f, FPS: %4.2f, cr=%0.3f ci=%0.3f", (dt/1000.0), fps, cr, ci);
-	} else if (flame) {
+	} else if (flame || flame3d) {
 		sprintf(text2, "dt: %1.3f, FPS: %4.2f, Flame variation: %s", (dt/1000.0), fps, flameName);
 	} else {
 		sprintf(text2, "dt: %1.3f, FPS: %4.2f", (dt/1000.0), fps);
@@ -1322,7 +1458,7 @@ void drawAxes(void) {
 		width = 100 * 0.5,
 		thickness = 0.8;
 	glPushMatrix();
-	if ((mandelbrot) || (julia) || (flame)) {
+	if (mandelbrot || julia || flame || flame3d) {
 		drawBox(pos, color, height, width, thickness);
 	} else {
 		glLineWidth(1.0);
@@ -1336,8 +1472,8 @@ void drawAxes(void) {
 
 void drawTexture(void) {
 	glBindTexture(GL_TEXTURE_2D, textureID);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, sideLength, sideLength,
-		0, GL_RGBA, GL_FLOAT, colorsList);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, sideLength, sideLength,
+		0, GL_RGB, GL_FLOAT, colorsList);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 }
@@ -1411,7 +1547,7 @@ void onMouse(int button, int state, int x, int y) {
 		case GLUT_LEFT_BUTTON:
 			if (state == GLUT_DOWN) { // increase
 				printf("INFO: left button, x %d, y %d\n", x, y);
-				if ((mandelbrot) || (julia)) {
+				if (mandelbrot || julia) {
 					getWorldPos(x, y);
 					defineNewParameters(1);
 					displayFractal();
@@ -1421,7 +1557,7 @@ void onMouse(int button, int state, int x, int y) {
 		case GLUT_RIGHT_BUTTON:
 			if (state == GLUT_DOWN) { // decrease
 				printf("INFO: right button, x %d, y %d\n", x, y);
-				if ((mandelbrot) || (julia)) {
+				if (mandelbrot || julia) {
 					getWorldPos(x, y);
 					defineNewParameters(0);
 					displayFractal();
@@ -1441,7 +1577,7 @@ void onKeyboard(unsigned char key, int x, int y) {
 			exit(0);
 			break;
 		case 8: // BackSpace
-			if ((mandelbrot) || (julia)) {
+			if (mandelbrot || julia) {
 				xmin=-2.0; xmax=2.0;
 				ymin=-2.0; ymax=2.0;
 				cx=xmin; cy=ymin;
@@ -1491,7 +1627,7 @@ void onKeyboard(unsigned char key, int x, int y) {
 				rotJulia = !rotJulia;
 				printf("INFO: rotate Julia %d\n", rotJulia);
 			}
-			if (flame) {
+			if (flame || flame3d) {
 				free(flameFuncList);
 				flameFuncList = (flameFunction*)calloc(numOfFlameFunct, sizeof(flameFunction));
 				initFlameFunction();
@@ -1499,7 +1635,7 @@ void onKeyboard(unsigned char key, int x, int y) {
 			}
 			break;
 		case 's':
-			if ((mandelbrot) || (julia)) {
+			if (mandelbrot || julia) {
 				saturation = 1 - saturation;
 				printf("INFO: saturation color %d\n", saturation);
 				displayFractal();
@@ -1561,7 +1697,7 @@ void onTimer(int event) {
 	}
 	prevx = 0.0;
 	prevy = 0.0;
-	if (flame) {
+	if (flame || flame3d) {
 		if (rotate) { roty -= 0.2; } else { roty += 0.0; }
 		if (roty > 360) roty = 360;
 	} else {
@@ -1583,15 +1719,22 @@ void update(int value) {
 			break;
 	}
 	if (rotColor) {
-		if ((mandelbrot) || (julia)) {
-			for (i=0; i<iterations*4; i+=4) {
+		if (mandelbrot || julia) {
+			for (i=0; i<iterations*3; i+=3) {
 				temp = rgb2hsv(colorsList[i], colorsList[i+1], colorsList[i+2]);
 				hsv2rgb(temp.x+0.01, 0.75, 0.9, &colorsList[i], &colorsList[i+1], &colorsList[i+2]);
 			}
 		} else if (flame) {
+			for (i=0; i<iterations; i++) {
+				if (pointsList[i].r!=0 && pointsList[i].g!=0 && pointsList[i].b!=0) {
+					temp = rgb2hsv(pointsList[i].r, pointsList[i].g, pointsList[i].b);
+					hsv2rgb(temp.x+0.01, temp.y, temp.z, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
+				}
+			}
+		} else if (flame3d) {
 			for (i=0; i<iterations*18; i+=3) {
 				temp = rgb2hsv(colorsList[i], colorsList[i+1], colorsList[i+2]);
-				if ((temp.x!=0.0) && (temp.y!=0.0) && (temp.z!=0.0)) {
+				if (temp.x!=0.0 && temp.y!=0.0 && temp.z!=0.0) {
 					hsv2rgb(temp.x+0.01, temp.y, temp.z, &colorsList[i], &colorsList[i+1], &colorsList[i+2]);
 				}
 			}
@@ -1639,7 +1782,7 @@ void display(void) {
 
 	drawAxes();
 
-	if ((mandelbrot) || (julia)) {
+	if (mandelbrot || julia) {
 		glEnable(GL_TEXTURE_2D);
 		glGenTextures(1, &textureID);
 		drawTexture();
@@ -1651,7 +1794,7 @@ void display(void) {
 		glEnd();
 		glDisable(GL_TEXTURE_2D);
 		drawWindow(winPosx, winPosy);
-	} else if (mandelbulb) {
+	} else if (mandelbulb || flame) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
@@ -1659,7 +1802,7 @@ void display(void) {
 		glDrawArrays(GL_POINTS, 0, iterations);
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
-	} else if (flame) {
+	} else if (flame3d) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glColorPointer(3, GL_FLOAT, 0, colorsList);
@@ -1778,18 +1921,19 @@ void launchDisplay(int argc, char *argv[]) {
 	else if (strcmp(argv[1], "menger") == 0) { menger=1; }
 	else if (strcmp(argv[1], "sierpinski") == 0) { sierpinski=1; }
 	else if (strcmp(argv[1], "flame") == 0) { flame=1; }
+	else if (strcmp(argv[1], "flame3d") == 0) { flame3d=1; }
 	else {
 		usage();
 		exit(EXIT_FAILURE);
 	}
-	if ((mandelbrot) || (julia)) {
+	if (mandelbrot || julia) {
 		xmin=-2.0; xmax=2.0;
 		ymin=-2.0; ymax=2.0;
 		cx=xmin, cy=ymin,
-		sideLength = 800;
+		sideLength = 1200;
 		iterations = sideLength * sideLength;
 		maxIter = 128;
-		colorsList = (float*)calloc(iterations*4, sizeof(colorsList));
+		colorsList = (float*)calloc(iterations*3, sizeof(colorsList));
 		displayFractal();
 	}
 	if (mandelbulb) {
@@ -1818,14 +1962,15 @@ void launchDisplay(int argc, char *argv[]) {
 		pyramidList = (object*)calloc(sierpinskiIter, sizeof(object));
 		displaySierpinski();
 	}
-	if (flame) {
+	if (flame || flame3d) {
 		numOfFlameFunct = 16;
-		sideLength = 800;
+		if (flame) { sideLength = 1200; }
+		else if (flame3d) { sideLength = 800; }
 		xmin=-2.0; xmax=2.0;
 		ymin=-2.0; ymax=2.0;
 		iterations = sideLength * sideLength;
 		flameFuncList = (flameFunction*)calloc(numOfFlameFunct, sizeof(flameFunction));
-		//pointsList = (point*)calloc(iterations, sizeof(point));
+		pointsList = (point*)calloc(iterations, sizeof(point));
 		initFlameFunction();
 		displayFlame();
 	}
