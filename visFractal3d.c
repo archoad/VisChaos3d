@@ -114,6 +114,7 @@ static point *pointsList = NULL;
 static object *cubeList = NULL;
 static object *pyramidList = NULL;
 static flameFunction *flameFuncList = NULL;
+static flamepoint flamePointList[MAX_SIDE_LENGTH][MAX_SIDE_LENGTH];
 
 static unsigned long iterations = 0;
 
@@ -211,10 +212,12 @@ void hsv2rgb(float h, float s, float v, GLfloat *r, GLfloat *g, GLfloat *b) {
 
 
 void gaussianBlur(int gaussSize) {
+	// source http://rastergrid.com/blog/2010/09/efficient-gaussian-blur-with-linear-sampling
 	unsigned long cur=0;
 	int i=0, j=0, k=0, gaussSum=0, decal;
 	double sumr=0.0, sumg=0.0, sumb=0.0;
 	int *gaussFactor=NULL;
+	vector v;
 	static vector matrixPoint[MAX_SIDE_LENGTH][MAX_SIDE_LENGTH];
 
 	gaussFactor = (int *)calloc(gaussSize, sizeof(int));
@@ -270,11 +273,10 @@ void gaussianBlur(int gaussSize) {
 				matrixPoint[i][j].z = colorsList[cur+2];
 				cur+=3;
 			}
-			if (flame) {
-				matrixPoint[i][j].x = pointsList[cur].r;
-				matrixPoint[i][j].y = pointsList[cur].g;
-				matrixPoint[i][j].z = pointsList[cur].b;
-				cur++;
+			if (flame || flame3d) {
+				hsv2rgb(flamePointList[i][j].h,
+					flamePointList[i][j].s, flamePointList[i][j].v,
+					&matrixPoint[i][j].x, &matrixPoint[i][j].y, &matrixPoint[i][j].z);
 			}
 		}
 	}
@@ -328,11 +330,11 @@ void gaussianBlur(int gaussSize) {
 				colorsList[cur+2] = matrixPoint[i][j].z;
 				cur+=3;
 			}
-			if (flame) {
-				pointsList[cur].r = matrixPoint[i][j].x;
-				pointsList[cur].g = matrixPoint[i][j].y;
-				pointsList[cur].b = matrixPoint[i][j].z;
-				cur++;
+			if (flame || flame3d) {
+				v = rgb2hsv(matrixPoint[i][j].x, matrixPoint[i][j].y, matrixPoint[i][j].z);
+				flamePointList[i][j].h = v.x;
+				flamePointList[i][j].s = v.y;
+				flamePointList[i][j].v = v.z;
 			}
 		}
 	}
@@ -448,7 +450,6 @@ void displayFlame(void) {
 	ac=0.0, bc=0.0, cc=0.0, dc=0.0, ec=0.0, fc=0.0;
 	int i=0, endx=0, endy=0;
 	unsigned long iter=0;
-	static flamepoint flamePointList[MAX_SIDE_LENGTH][MAX_SIDE_LENGTH];
 
 	for (endx=0; endx<sideLength; endx++) {
 		for (endy=0; endy<sideLength; endy++) {
@@ -913,68 +914,70 @@ void displayFlame(void) {
 			}
 		}
 	}
-	free(verticesList);
-	free(colorsList);
-	verticesList = (float *)calloc(iterations*18, sizeof(float));
-	colorsList = (float *)calloc(iterations*18, sizeof(float));
+
+	if (flame) { gaussianBlur(13); }
+	if (flame3d) { gaussianBlur(13); }
+
+	if (flame3d) {
+		free(verticesList);
+		free(colorsList);
+		verticesList = (float *)calloc(iterations*18, sizeof(float));
+		colorsList = (float *)calloc(iterations*18, sizeof(float));
+	}
 	iter=0;
 	for (endx=0; endx<sideLength; endx++) {
 		for (endy=0; endy<sideLength; endy++) {
 			if (flame3d) {
-				hsv2rgb(
-					(float)flamePointList[endx][endy].h,
-					(float)flamePointList[endx][endy].s,
-					(float)flamePointList[endx][endy].v,
+				hsv2rgb(flamePointList[endx][endy].h,
+					flamePointList[endx][endy].s,
+					flamePointList[endx][endy].v,
 					&colorsList[iter], &colorsList[iter+1], &colorsList[iter+2]);
-				hsv2rgb(
-					(float)flamePointList[endx+1][endy].h,
-					(float)flamePointList[endx+1][endy].s,
-					(float)flamePointList[endx+1][endy].v,
+				hsv2rgb(flamePointList[endx+1][endy].h,
+					flamePointList[endx+1][endy].s,
+					flamePointList[endx+1][endy].v,
 					&colorsList[iter+3], &colorsList[iter+4], &colorsList[iter+5]);
-				hsv2rgb(
-					(float)flamePointList[endx][endy+1].h,
-					(float)flamePointList[endx][endy+1].s,
-					(float)flamePointList[endx][endy+1].v,
+				hsv2rgb(flamePointList[endx][endy+1].h,
+					flamePointList[endx][endy+1].s,
+					flamePointList[endx][endy+1].v,
 					&colorsList[iter+6], &colorsList[iter+7], &colorsList[iter+8]);
 
-				hsv2rgb(
-					(float)flamePointList[endx+1][endy].h,
-					(float)flamePointList[endx+1][endy].s,
-					(float)flamePointList[endx+1][endy].v,
+				hsv2rgb(flamePointList[endx+1][endy].h,
+					flamePointList[endx+1][endy].s,
+					flamePointList[endx+1][endy].v,
 					&colorsList[iter+9], &colorsList[iter+10], &colorsList[iter+11]);
 				hsv2rgb(
-					(float)flamePointList[endx+1][endy+1].h,
-					(float)flamePointList[endx+1][endy+1].s,
-					(float)flamePointList[endx+1][endy+1].v,
+					flamePointList[endx+1][endy+1].h,
+					flamePointList[endx+1][endy+1].s,
+					flamePointList[endx+1][endy+1].v,
 					&colorsList[iter+12], &colorsList[iter+13], &colorsList[iter+14]);
 				hsv2rgb(
-					(float)flamePointList[endx][endy+1].h,
-					(float)flamePointList[endx][endy+1].s,
-					(float)flamePointList[endx][endy+1].v,
+					flamePointList[endx][endy+1].h,
+					flamePointList[endx][endy+1].s,
+					flamePointList[endx][endy+1].v,
 					&colorsList[iter+15], &colorsList[iter+16], &colorsList[iter+17]);
 
 				verticesList[iter] = (endx - (sideLength/2)) / (sideLength/50.0);
-				verticesList[iter+1] = flamePointList[endx][endy].h*-2;
+				verticesList[iter+1] = 4 * flamePointList[endx][endy].h;
 				verticesList[iter+2] = (endy - (sideLength/2)) / (sideLength/50.0);
 
 				verticesList[iter+3] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
-				verticesList[iter+4] = flamePointList[endx+1][endy].h*-2;
+				verticesList[iter+4] = 4 * flamePointList[endx+1][endy].h;
 				verticesList[iter+5] = (endy - (sideLength/2)) / (sideLength/50.0);
 
 				verticesList[iter+6] = (endx - (sideLength/2)) / (sideLength/50.0);
-				verticesList[iter+7] = flamePointList[endx][endy+1].h*-2;
+				verticesList[iter+7] = 4 * flamePointList[endx][endy+1].h;
 				verticesList[iter+8] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
 
 				verticesList[iter+9] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
-				verticesList[iter+10] = flamePointList[endx+1][endy].h*-2;
+				verticesList[iter+10] = 4 * flamePointList[endx+1][endy].h;
 				verticesList[iter+11] = (endy - (sideLength/2)) / (sideLength/50.0);
 
 				verticesList[iter+12] = (endx+1 - (sideLength/2)) / (sideLength/50.0);
-				verticesList[iter+13] = flamePointList[endx+1][endy+1].h*-2;
+				verticesList[iter+13] = 4 * flamePointList[endx+1][endy+1].h;
 				verticesList[iter+14] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
 
 				verticesList[iter+15] = (endx - (sideLength/2)) / (sideLength/50.0);
-				verticesList[iter+16] = flamePointList[endx][endy+1].h*-2;
+				verticesList[iter+16] = 4 * flamePointList[endx][endy+1].h;
 				verticesList[iter+17] = (endy+1 - (sideLength/2)) / (sideLength/50.0);
 				iter+=18;
 			}
@@ -992,7 +995,6 @@ void displayFlame(void) {
 			}
 		}
 	}
-	gaussianBlur(13);
 }
 
 
@@ -1458,8 +1460,10 @@ void drawAxes(void) {
 		width = 100 * 0.5,
 		thickness = 0.8;
 	glPushMatrix();
-	if (mandelbrot || julia || flame || flame3d) {
+	if (mandelbrot || julia || flame) {
 		drawBox(pos, color, height, width, thickness);
+	} else if (flame3d) {
+		drawBox(pos, color, height, width, thickness*4);
 	} else {
 		glLineWidth(1.0);
 		glTranslatef(0.0, 0.0, 0.0);
@@ -1697,12 +1701,11 @@ void onTimer(int event) {
 	}
 	prevx = 0.0;
 	prevy = 0.0;
-	if (flame || flame3d) {
-		if (rotate) { roty -= 0.2; } else { roty += 0.0; }
-		if (roty > 360) roty = 360;
+	if (rotate) {
+		if (flame || flame3d) { roty += 0.2; }
+		else { rotz -= 0.2; }
 	} else {
-		if (rotate) { rotz -= 0.2; } else { rotz += 0.0; }
-		if (rotz > 360) rotz = 360;
+		roty = 0.0;
 	}
 	glutPostRedisplay();
 	glutTimerFunc(dt, onTimer, 0);
