@@ -44,7 +44,8 @@ static short winSizeW = 920,
 	rotate = 0, rotColor = 0, rotJulia = 0,
 	saturation = 1,
 	mandelbulb = 0, mandelbrot = 0, julia = 0, menger = 0,
-	sierpinski = 0, flame = 0, flame3d = 0, ifs = 0, planet = 0,
+	sierpinski = 0, flame = 0, flame3d = 0, ifs = 0,
+	planet = 0, landscape = 0,
 	mengerDepth = 0, sierpinskiDepth = 0,
 	numOfFlameFunct = 0,
 	blurRadius = 0, nbrIfs = 0,
@@ -144,7 +145,7 @@ void usage(void) {
 	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
 	couleur("0");
 	printf("Syntaxe: visFractal3d <fractal> <background color>\n");
-	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger', 'sierpinski', 'flame', 'flame3d', 'ifs', 'planet' or 'mandelbulb'\n");
+	printf("\t<fractal> -> 'mandelbrot', 'julia', 'menger', 'sierpinski', 'flame', 'flame3d', 'ifs', 'planet', 'landscape' or 'mandelbulb'\n");
 	printf("\t<background color> -> 'white' or 'black'\n");
 }
 
@@ -179,6 +180,20 @@ double genDoubleRandom(double min, double max) {
 	double t = 0.0;
 	t = (max-min) * ((double)rand()/(double)(RAND_MAX)) + min;
 	return(t);
+}
+
+
+double genRand01() {
+	double tmp=0.0;
+	tmp = (rand() & 0xfffffff) / (double) 0xfffffff;
+	return(tmp);
+}
+
+
+double genRand11() {
+	double tmp=0.0;
+	tmp = ((rand() & 0xfffffff) - 0x7ffffff) / (double) 0x7ffffff;
+	return(tmp);
 }
 
 
@@ -371,6 +386,128 @@ void getWorldPos(int x, int y) {
 }
 
 
+vector getEarthColour(double v) {
+	//source http://paulbourke.net/libraries/paulslib.c
+	vector c={1.0,1.0,1.0};
+	vector c1, c2, c3;
+	double dv, vmid, ratio, vmin=0.0, vmax=1.0;
+
+	if (v < vmin) v = vmin;
+	if (v > vmax) v = vmax;
+	dv = vmax - vmin;
+
+	c1.x =  48/255.0; c1.y = 132/255.0; c1.z =  70/255.0; // green
+	c2.x = 139/255.0; c2.y =  69/255.0; c2.z =  19/255.0; // brown
+	c3.x = 220/255.0; c3.y = 220/255.0; c3.z = 250/255.0; // snow
+
+	ratio = 0.4;
+	vmid = vmin + ratio * dv;
+	if (v < vmid) {
+		c.x = (c2.x - c1.x) * (v - vmin) / (ratio*dv) + c1.x;
+		c.y = (c2.y - c1.y) * (v - vmin) / (ratio*dv) + c1.y;
+		c.z = (c2.z - c1.z) * (v - vmin) / (ratio*dv) + c1.z;
+	} else {
+		c.x = (c3.x - c2.x) * (v - vmid) / ((1-ratio)*dv) + c2.x;
+		c.y = (c3.y - c2.y) * (v - vmid) / ((1-ratio)*dv) + c2.y;
+		c.z = (c3.z - c2.z) * (v - vmid) / ((1-ratio)*dv) + c2.z;
+	}
+	return(c);
+}
+
+
+void displayLandscape(void) {
+	static vector matrixPoint[MAX_SIDE_LENGTH][MAX_SIDE_LENGTH];
+	int i=0, j=0, k=0, x1=0, y1=0, x2=0, y2=0,
+		iter=0, test=0, x=0, y=0, tx=0, ty=0, r=(blurRadius*2)+1;
+	float a=0.0, b=0.0, factor=0.0, limit=0.0;
+	double max=15.0, min=-15.0, sumz=0.0, maxz=0.0;
+	vector c;
+
+	iter = 1000;
+	factor = 0.1;
+	cpt=0;
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			pointsList[cpt].r = cpt / (double)iterations;
+			pointsList[cpt].g = cpt / (double)iterations;
+			pointsList[cpt].b = cpt / (double)iterations;
+			pointsList[cpt].x = (i * (max-min) / (double)sideLength)+min;
+			pointsList[cpt].y = (j * (max-min) / (double)sideLength)+min;
+			pointsList[cpt].z = 0.0f;
+			cpt++;
+		}
+	}
+
+	for (k=0; k<iter; k++) {
+		test = rand() % 2;
+		x1 = rand() % sideLength;
+		y1 = rand() % sideLength;
+		x2 = rand() % sideLength;
+		y2 = rand() % sideLength;
+		a = (float)(y2 - y1) / (float)(x2 - x1);
+		b = (float)(y1 - a*x1);
+		cpt=0;
+		for (i=0; i<sideLength; i++) {
+			for (j=0; j<sideLength; j++) {
+				if (test) {
+					if (j > a*(float)i + b) { pointsList[cpt].z += factor; }
+					else { pointsList[cpt].z -= factor; }
+				} else {
+					if (j > a*(float)i + b) { pointsList[cpt].z -= factor; }
+					else { pointsList[cpt].z += factor; }
+				}
+				cpt++;
+			}
+		}
+	}
+	computeLowPassKernel(blurRadius);
+	displayKernel(blurRadius);
+	cpt=0;
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			matrixPoint[i][j].z = pointsList[cpt].z;
+			cpt++;
+		}
+	}
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			if (i<blurRadius || i>=sideLength-blurRadius || j<blurRadius || j>=sideLength-blurRadius) {
+				matrixPoint[i][j].z = 0;
+			} else {
+				sumz=0;
+				for (x=0; x<r; ++x) {
+					for (y=0; y<r; ++y) {
+						tx = x - blurRadius; ty = y - blurRadius;
+						sumz += matrixPoint[i+tx][j+ty].z * kernel[x][y];
+					}
+				}
+				matrixPoint[i][j].z = sumz;
+				if (matrixPoint[i][j].z>maxz) { maxz = matrixPoint[i][j].z; }
+			}
+		}
+	}
+	cpt=0;
+	for (i=0; i<sideLength; i++) {
+		for (j=0; j<sideLength; j++) {
+			if (matrixPoint[i][j].z < limit) {
+				pointsList[cpt].z = limit;
+				pointsList[cpt].r = 0.2;
+				pointsList[cpt].g = 0.2;
+				pointsList[cpt].b = 1.0;
+			} else {
+				pointsList[cpt].z = matrixPoint[i][j].z;
+				c = getEarthColour(pointsList[cpt].z / (maxz-limit));
+				pointsList[cpt].r = c.x;
+				pointsList[cpt].g = c.y;
+				pointsList[cpt].b = c.z;
+			}
+			pointsList[cpt].z -= 8.0;
+			cpt++;
+		}
+	}
+}
+
+
 void displayIFSfern(void) {
 	// source http://www.paulbourke.net/fractals/ifs_fern_a/
 	unsigned long iter=0;
@@ -477,28 +614,14 @@ void contractiveMapping(double *ac, double *bc, double *cc, double *dc, double *
 }
 
 
-double genFlameRand01() {
-	double tmp=0.0;
-	tmp = (rand() & 0xfffffff) / (double) 0xfffffff;
-	return(tmp);
-}
-
-
-double genFlameRand11() {
-	double tmp=0.0;
-	tmp = ((rand() & 0xfffffff) - 0x7ffffff) / (double) 0x7ffffff;
-	return(tmp);
-}
-
-
 void initFlameFunction(void) {
 	int i=0, var=0;
 	var = rand() % 51;;
 	for (i=0; i<numOfFlameFunct; i++) {
 		//flameFuncList[i].variation = rand() % 51;
 		flameFuncList[i].variation = var;
-		flameFuncList[i].weight = genFlameRand01();
-		flameFuncList[i].h = genFlameRand01();
+		flameFuncList[i].weight = genRand01();
+		flameFuncList[i].h = genRand01();
 		flameFuncList[i].s = 0.75;
 		flameFuncList[i].v = 0.9;
 		contractiveMapping(&flameFuncList[i].ac, &flameFuncList[i].bc, &flameFuncList[i].cc, &flameFuncList[i].dc, &flameFuncList[i].ec, &flameFuncList[i].fc);
@@ -719,10 +842,10 @@ void computeFlame(void) {
 				break;
 			case 24:
 				snprintf(flameName, 14, "PDJ");
-				double nx1 = cos(genFlameRand11() * tx);
-				double nx2 = sin(genFlameRand11() * tx);
-				double ny1 = sin(genFlameRand11() * ty);
-				double ny2 = cos(genFlameRand11() * ty);
+				double nx1 = cos(genRand11() * tx);
+				double nx2 = sin(genRand11() * tx);
+				double ny1 = sin(genRand11() * ty);
+				double ny2 = cos(genRand11() * ty);
 				nx = ny1 - nx1;
 				ny = nx2 - ny2;
 				break;
@@ -730,8 +853,8 @@ void computeFlame(void) {
 				snprintf(flameName, 14, "Fan2");
 				a = atan2(tx, ty);
 				r = sqrt(tx*tx + ty*ty);
-				double fan2 = genFlameRand11();
-				dy = genFlameRand11();
+				double fan2 = genRand11();
+				dy = genRand11();
 				dx = M_PI * (fan2 * fan2 + 1e-10);
 				dx2 = dx / 2.0;
 				double t = a + dy - dx * (int)((a + dy)/dx);
@@ -742,7 +865,7 @@ void computeFlame(void) {
 				break;
 			case 26:
 				snprintf(flameName, 14, "Rings2");
-				double fx = genFlameRand11();
+				double fx = genRand11();
 				r = sqrt(tx*tx + ty*ty);
 				dx = fx * fx + 1e-10;
 				r += dx - 2.0*dx*(int)((r + dx)/(2.0 * dx)) - dx + r * (1.0-dx);
@@ -769,15 +892,15 @@ void computeFlame(void) {
 			case 30:
 				snprintf(flameName, 14, "Perspective");
 				double p1 = M_PI_4;
-				double p2 = 2*genFlameRand01() + 1.0;
+				double p2 = 2*genRand01() + 1.0;
 				t = p2 / (p2 - ty*sin(p1));
 				nx = t * tx;
 				ny = ty * cos(p1);
 				break;
 			case 31:
 				snprintf(flameName, 14, "Noise");
-				p1 = genFlameRand01();
-				p2 = genFlameRand01();
+				p1 = genRand01();
+				p2 = genRand01();
 				nx = p1 * tx * cos(2*M_PI*p2);
 				ny = p1 * ty * sin(2*M_PI*p2);
 				break;
@@ -786,8 +909,8 @@ void computeFlame(void) {
 				a = atan2(ty,tx);
 				r = tx*tx + ty*ty;
 				p1 = 1 + rand() % 7;
-				p2 = genFlameRand01();
-				double p3 = trunc(p1 * genFlameRand01());
+				p2 = genRand01();
+				double p3 = trunc(p1 * genRand01());
 				t = 2*M_PI*p3 + a / p1;
 				r = pow(r, p2/p1);
 				nx = r * cos(t);
@@ -798,8 +921,8 @@ void computeFlame(void) {
 				a = atan2(ty,tx);
 				r = tx*tx + ty*ty;
 				p1 = 1 + rand() % 7;
-				p2 = genFlameRand01();
-				p3 = trunc(p1 * genFlameRand01());
+				p2 = genRand01();
+				p3 = trunc(p1 * genRand01());
 				if (rand()%2) { t = 2*M_PI*p3 + a / p1; } else { t = 2*M_PI*p3 - a / p1; }
 				r = pow(r, p2/p1);
 				nx = r * cos(t);
@@ -807,21 +930,21 @@ void computeFlame(void) {
 				break;
 			case 34:
 				snprintf(flameName, 14, "Blur");
-				p1 = genFlameRand01();
-				p2 = genFlameRand01() * 2 * M_PI;
+				p1 = genRand01();
+				p2 = genRand01() * 2 * M_PI;
 				nx = p1 * cos(p2);
 				ny = p1 * sin(p2);
 				break;
 			case 35:
 				snprintf(flameName, 14, "Gaussian");
-				r = genFlameRand01() + genFlameRand01() + genFlameRand01() + genFlameRand01() - 2.0;
-				p1 = genFlameRand01() * 2 * M_PI;
+				r = genRand01() + genRand01() + genRand01() + genRand01() - 2.0;
+				p1 = genRand01() * 2 * M_PI;
 				nx = r * cos(p1);
 				ny = r * sin(p1);
 				break;
 			case 36:
 				snprintf(flameName, 14, "RadialBlur");
-				t = genFlameRand01() + genFlameRand01() + genFlameRand01() + genFlameRand01() - 2.0;
+				t = genRand01() + genRand01() + genRand01() + genRand01() - 2.0;
 				r = sqrt(tx*tx + ty*ty);
 				a = atan2(ty,tx);
 				p1 = M_PI/8.0 * M_PI/2.0;
@@ -832,21 +955,21 @@ void computeFlame(void) {
 				break;
 			case 37:
 				snprintf(flameName, 14, "Pie");
-				p1 = 10.0*genFlameRand01(); // slices
-				p2 = 2.0 * M_PI * genFlameRand11(); // rotation
-				p3 = genFlameRand01(); // thickness
-				t = (int)(genFlameRand01() * p1 + 0.5);
-				a = p2 + 2.0 * M_PI * (t + genFlameRand01() * p3) / p1;
-				r = genFlameRand01();
+				p1 = 10.0*genRand01(); // slices
+				p2 = 2.0 * M_PI * genRand11(); // rotation
+				p3 = genRand01(); // thickness
+				t = (int)(genRand01() * p1 + 0.5);
+				a = p2 + 2.0 * M_PI * (t + genRand01() * p3) / p1;
+				r = genRand01();
 				nx = r * cos(a);
 				ny = r * sin(a);
 				break;
 			case 38:
 				snprintf(flameName, 14, "Ngon");
-				p1 = 3*genFlameRand01() + 1; // power
-				p2 = 2*M_PI / (10*genFlameRand01() + 3); // sides
-				p3 = 2*genFlameRand01(); // corners
-				double p4 = 3*genFlameRand01(); // circle
+				p1 = 3*genRand01() + 1; // power
+				p2 = 2*M_PI / (10*genRand01() + 3); // sides
+				p3 = 2*genRand01(); // corners
+				double p4 = 3*genRand01(); // circle
 				double theta = atan2(ty,tx);
 				t = theta - (p2 * floor(theta / p2));
 				if (t > p2 / 2) { r = t; } else { r = t - p2; }
@@ -862,14 +985,14 @@ void computeFlame(void) {
 				break;
 			case 40:
 				snprintf(flameName, 14, "Square");
-				p1 = genFlameRand01();
-				p2 = genFlameRand01();
+				p1 = genRand01();
+				p2 = genRand01();
 				nx = p1 - 0.5;
 				ny = p2 - 0.5;
 				break;
 			case 41:
 				snprintf(flameName, 14, "Rays");
-				t = genFlameRand01() * M_PI;
+				t = genRand01() * M_PI;
 				r = 1.0 / (tx*tx + ty*ty + 1e-10);
 				p1 = tan(t) * r;
 				nx = p1 * cos(tx);
@@ -877,13 +1000,13 @@ void computeFlame(void) {
 				break;
 			case 42:
 				snprintf(flameName, 14, "Blade");
-				r = genFlameRand01() * sqrt(tx*tx + ty*ty);
+				r = genRand01() * sqrt(tx*tx + ty*ty);
 				nx = tx * (cos(r) + sin(r));
 				ny = tx * (cos(r) - sin(r));
 				break;
 			case 43:
 				snprintf(flameName, 14, "Twintrian");
-				r = genFlameRand01() * sqrt(tx*tx + ty*ty);
+				r = genRand01() * sqrt(tx*tx + ty*ty);
 				p1 = cos(r);
 				p2 = sin(r);
 				t = log10(p2*p2)+p1;
@@ -900,7 +1023,7 @@ void computeFlame(void) {
 			case 45:
 				snprintf(flameName, 14, "Flower");
 				a = atan2(ty,tx);
-				r = genFlameRand01() - genFlameRand01() * cos(4*a*genFlameRand01()) / sqrt(tx*tx + ty*ty);
+				r = genRand01() - genRand01() * cos(4*a*genRand01()) / sqrt(tx*tx + ty*ty);
 				nx = r * tx;
 				ny = r * ty;
 				break;
@@ -916,7 +1039,7 @@ void computeFlame(void) {
 				snprintf(flameName, 14, "Escher");
 				a = atan2(ty,tx);
 				r = 0.5 * log(tx*tx + ty*ty);
-				t = M_PI * genFlameRand11();
+				t = M_PI * genRand11();
 				double vc = 0.5 * (1.0 + cos(t));
 				double vd = 0.5 * sin(t);
 				double m = exp(vc*r - vd*a);
@@ -926,9 +1049,9 @@ void computeFlame(void) {
 				break;
 			case 48:
 				snprintf(flameName, 14, "Popcorn2");
-				t = 5 * genFlameRand01();
-				nx = tx * genFlameRand01() * sin(tan(ty*t));
-				ny = ty * genFlameRand01() * sin(tan(tx*t));
+				t = 5 * genRand01();
+				nx = tx * genRand01() * sin(tan(ty*t));
+				ny = ty * genRand01() * sin(tan(tx*t));
 				break;
 			case 49:
 				snprintf(flameName, 14, "Log");
@@ -937,14 +1060,14 @@ void computeFlame(void) {
 				break;
 			case 50:
 				snprintf(flameName, 14, "Mobius");
-				double rea = genFlameRand11();
-				double reb = genFlameRand11();
-				double rec = genFlameRand11();
-				double red = genFlameRand11();
-				double ima = genFlameRand11();
-				double imb = genFlameRand11();
-				double imc = genFlameRand11();
-				double imd = genFlameRand11();
+				double rea = genRand11();
+				double reb = genRand11();
+				double rec = genRand11();
+				double red = genRand11();
+				double ima = genRand11();
+				double imb = genRand11();
+				double imc = genRand11();
+				double imd = genRand11();
 				double reu = rea * tx - ima * ty + reb;
 				double imu = rea * ty + ima * tx + imb;
 				double rev = rec * tx - imc * ty + red;
@@ -1539,7 +1662,7 @@ GLuint createPlanetTexture(void) {
 		a=0.0, b=0.0, factor=0.0;
 	GLuint texID;
 
-	hue = genFlameRand01();
+	hue = genRand01();
 	iter = 1000;
 	factor = 0.01;
 	cpt=0;
@@ -1655,10 +1778,10 @@ void displayPlanet(void) {
 		pointsList[i].x = genDoubleRandom(-12.0, 12.0);
 		pointsList[i].y = genDoubleRandom(-12.0, 12.0);
 		pointsList[i].z = genDoubleRandom(-12.0, 12.0);
-		pointsList[i].rx = genFlameRand01();
-		pointsList[i].ry = genFlameRand01();
-		pointsList[i].rz = genFlameRand01();
-		pointsList[i].rf = genFlameRand01();
+		pointsList[i].rx = genRand01();
+		pointsList[i].ry = genRand01();
+		pointsList[i].rz = genRand01();
+		pointsList[i].rf = genRand01();
 		pointsList[i].counter = rand() % 12;
 	}
 }
@@ -2071,12 +2194,13 @@ void display(void) {
 		glEnd();
 		glDisable(GL_TEXTURE_2D);
 		drawWindow(winPosx, winPosy);
-	} else if (flame || mandelbulb || ifs) {
+	} else if (flame || mandelbulb || ifs || landscape) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
 		glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
 		if (flame || mandelbulb) { glDrawArrays(GL_POINTS, 0, iterations); }
+		if (landscape) { glDrawArrays(GL_POINTS, 0, iterations); }
 		if (ifs) { glDrawArrays(GL_POINTS, 0, iterations*nbrIfs); }
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
@@ -2098,12 +2222,14 @@ void display(void) {
 			drawCube(cubeList[i].pos, cubeList[i].color, cubeList[i].size);
 			glPopMatrix();
 		}
-	} else {
+	} else if (sierpinski) {
 		for (i=0; i<sierpinskiIter; i++) {
 			glPushMatrix();
 			drawPyramid(pyramidList[i].pos, pyramidList[i].color, pyramidList[i].size);
 			glPopMatrix();
 		}
+	} else {
+		drawString(0.0f, 0.0f, 0.0f, "Nothing to display");
 	}
 	glPopMatrix();
 
@@ -2213,6 +2339,7 @@ void launchDisplay(int argc, char *argv[]) {
 	else if (strcmp(argv[1], "flame3d") == 0) { flame3d=1; }
 	else if (strcmp(argv[1], "ifs") == 0) { ifs=1; }
 	else if (strcmp(argv[1], "planet") == 0) { planet=1; }
+	else if (strcmp(argv[1], "landscape") == 0) { landscape=1; }
 	else {
 		usage();
 		exit(EXIT_FAILURE);
@@ -2281,6 +2408,13 @@ void launchDisplay(int argc, char *argv[]) {
 		pointsList = (point*)calloc(iterations, sizeof(point));
 		colorsList = (float*)calloc(sideLength*sideLength*3, sizeof(colorsList));
 		displayPlanet();
+	}
+	if (landscape) {
+		sideLength = 1200;
+		blurRadius = 4;
+		iterations = sideLength * sideLength;
+		pointsList = (point*)calloc(iterations, sizeof(point));
+		displayLandscape();
 	}
 	glmain(argc, argv);
 }
