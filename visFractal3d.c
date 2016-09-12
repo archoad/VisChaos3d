@@ -153,7 +153,7 @@ void usage(void) {
 void help(void) {
 	textMandel();
 	couleur("31");
-	printf("Michel Dubois -- gravity3d -- (c) 2013\n\n");
+	printf("Michel Dubois -- visFractal3d -- (c) 2013\n\n");
 	couleur("0");
 	printf("Key usage:\n");
 	printf("\t'ESC' key to quit\n");
@@ -418,12 +418,11 @@ vector getEarthColour(double v) {
 void displayLandscape(void) {
 	static vector matrixPoint[MAX_SIDE_LENGTH][MAX_SIDE_LENGTH];
 	int i=0, j=0, k=0, x1=0, y1=0, x2=0, y2=0,
-		iter=0, test=0, x=0, y=0, tx=0, ty=0, r=(blurRadius*2)+1;
+		test=0, x=0, y=0, tx=0, ty=0, r=(blurRadius*2)+1;
 	float a=0.0, b=0.0, factor=0.0, limit=0.0;
 	double max=15.0, min=-15.0, sumz=0.0, maxz=0.0;
 	vector c;
 
-	iter = 1000;
 	factor = 0.1;
 	cpt=0;
 	for (i=0; i<sideLength; i++) {
@@ -438,7 +437,7 @@ void displayLandscape(void) {
 		}
 	}
 
-	for (k=0; k<iter; k++) {
+	for (k=0; k<maxIter; k++) {
 		test = rand() % 2;
 		x1 = rand() % sideLength;
 		y1 = rand() % sideLength;
@@ -2412,6 +2411,7 @@ void launchDisplay(int argc, char *argv[]) {
 	if (landscape) {
 		sideLength = 1200;
 		blurRadius = 4;
+		maxIter = 1000;
 		iterations = sideLength * sideLength;
 		pointsList = (point*)calloc(iterations, sizeof(point));
 		displayLandscape();
