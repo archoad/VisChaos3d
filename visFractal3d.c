@@ -2153,8 +2153,7 @@ void init(void) {
 	glEnable(GL_AUTO_NORMAL);
 	glDepthFunc(GL_LESS);
 
-	glEnable(GL_TEXTURE_2D);
-	glGenTextures(1, &textureID);
+	glDisable(GL_CULL_FACE);
 	if (planet) {
 		assignTexture();
 		drawObjects();
