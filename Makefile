@@ -34,10 +34,13 @@ visChaos3d: visChaos3d.c
 visFractal3d: visFractal3d.c
 	$(COMPIL) $(CFLAGS) $(IFLAGSDIR) $(LFLAGSDIR) $(GL_FLAGS) $(MATH_FLAGS) $(PNG_FLAGS) $< -o $@
 
-
 dest_sys:
 	@echo "Destination system:" $(UNAME_S)
+
+debug: CFLAGS += -DDEBUG -g
+debug: dest_sys visChaos3d visFractal3d
 
 clean:
 	@rm -f visChaos3d
 	@rm -f visFractal3d
+	@rm -fR *.dSYM

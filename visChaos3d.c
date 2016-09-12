@@ -24,9 +24,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301, USA.*/
 #include <math.h>
 #include <png.h>
 
-#include <GL/gl.h>
-#include <GL/glu.h>
-#include <GL/glut.h>
+#include <GL/freeglut.h>
 
 #define WINDOW_TITLE_PREFIX "visChaos3d"
 #define couleur(param) printf("\033[%sm",param)
@@ -316,9 +314,9 @@ void onKeyboard(unsigned char key, int x, int y) {
 	char *name = malloc(20 * sizeof(char));
 	switch (key) {
 		case 27: // Escape
-			printf("INFO: exit\n");
 			printf("x %d, y %d\n", x, y);
-			exit(0);
+			printf("INFO: exit loop\n");
+			glutLeaveMainLoop();
 			break;
 		case 'x':
 			xx += 1.0;
@@ -529,9 +527,12 @@ void glmain(int argc, char *argv[]) {
 	glutTimerFunc(dt, onTimer, 0);
 	glutTimerFunc(dt, update, 0);
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
+	fprintf(stdout, "INFO: FreeGLUT Version: %d\n", glutGet(GLUT_VERSION));
 	fprintf(stdout, "INFO: Min: %.02lf, Max: %.02lf\n", zMin, zMax);
 	fprintf(stdout, "INFO: Nbr elts: %ld\n", iterations);
+	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
 	glutMainLoop();
+	fprintf(stdout, "INFO: Freeing memory\n");
 	glDeleteLists(textList, 1);
 	glDeleteLists(objectList, 1);
 }
