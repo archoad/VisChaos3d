@@ -35,7 +35,7 @@ static short winSizeW = 920,
 	currentTime = 0,
 	timebase = 0,
 	fullScreen = 0,
-	rotate = 0,
+	rotate = 0, rotColor = 0,
 	dt = 20; // in milliseconds
 
 static int textList = 0,
@@ -51,18 +51,23 @@ static float fps = 0.0,
 	xx = 0.0,
 	yy = 5.0,
 	zoom = 100.0,
-	prevx = 0.0,
-	prevy = 0.0,
+	prevx = 0.0, prevy = 0.0,
+	saturation = 0.8, value = 0.8,
+	alpha = 0.0,
 	sphereRadius = 0.4,
 	squareWidth = 0.055;
 
-static double zMax = 0,
-	zMin = 0,
+static double zmax = 0, zmin = 0,
+	dmax=0, dmin=0,
 	decal = 0;
+
+typedef struct _vector {
+	float x, y, z;
+} vector;
 
 typedef struct _point {
 	GLfloat x, y, z;
-	GLfloat r, g, b;
+	GLfloat r, g, b, a;
 } point;
 
 static point *pointsList = NULL;
@@ -103,6 +108,19 @@ void help(void) {
 }
 
 
+double distance(point p1, point p2) {
+	double dx=0.0, dy=0.0, dz=0.0, dist=0.0;
+	dx = p2.x - p1.x;
+	dx = dx * dx;
+	dy = p2.y - p1.y;
+	dy = dy * dy;
+	dz = p2.z - p1.z;
+	dz = dz * dz;
+	dist = sqrt(dx + dy + dz);
+	return(dist);
+}
+
+
 void takeScreenshot(char *filename) {
 	FILE *fp = fopen(filename, "wb");
 	int width = glutGet(GLUT_WINDOW_WIDTH);
@@ -127,9 +145,43 @@ void takeScreenshot(char *filename) {
 }
 
 
+vector rgb2hsv(float r, float g, float b) {
+	float cmin, cmax, delta;
+	vector out;
+	cmax = fmaxf(r, fmaxf(g, b));
+	cmin = fminf(r, fminf(g, b));
+	out.z = cmax;
+	delta = cmax - cmin;
+	if (delta < 0.00001) { out.y = 0; out.x = 0; return(out); }
+	if ( cmax>0.0 ) { out.y = delta / cmax; } else { out.y = 0; out.x = -1; return(out); }
+	if ( r>=cmax ) { out.x=(g - b) / delta; }
+	else if( g>=cmax ) { out.x = 2.0 + (b - r) / delta; }
+	else { out.x = 4.0 + (r - g) / delta; }
+	out.x = fmod( (out.x*60.0), 360.0);
+	out.x = out.x / 360.0;
+	return(out);
+}
+
+
+void hsv2rgb(double h, double s, double v, GLfloat *r, GLfloat *g, GLfloat *b) {
+	double hp = h * 6;
+	if ( hp == 6 ) hp = 0;
+	int i = floor(hp);
+	double v1 = v * (1 - s),
+		v2 = v * (1 - s * (hp - i)),
+		v3 = v * (1 - s * (1 - (hp - i)));
+	if (i == 0) { *r=v; *g=v3; *b=v1; }
+	else if (i == 1) { *r=v2; *g=v; *b=v1; }
+	else if (i == 2) { *r=v1; *g=v; *b=v3; }
+	else if (i == 3) { *r=v1; *g=v2; *b=v; }
+	else if (i == 4) { *r=v3; *g=v1; *b=v; }
+	else { *r=v; *g=v1; *b=v2; }
+}
+
+
 void drawPoint(point p) {
 	glPointSize(1.0);
-	glColor3f(p.r, p.g, p.b);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glBegin(GL_POINTS);
 	glNormal3f(p.x, p.y, p.z);
 	glVertex3f(p.x, p.y, p.z);
@@ -138,14 +190,14 @@ void drawPoint(point p) {
 
 
 void drawSphere(point p) {
-	glColor3f(p.r, p.g, p.b);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glTranslatef(p.x, p.y, p.z);
-	glutSolidSphere(sphereRadius, 6, 6);
+	glutSolidSphere(sphereRadius, 12, 12);
 }
 
 
 void drawSquare(point p) {
-	glColor3f(p.r, p.g, p.b);
+	glColor4f(p.r, p.g, p.b, p.a);
 	glTranslatef(p.x, p.y, p.z);
 	glBegin(GL_QUADS);
 	glVertex3f(-squareWidth, -squareWidth, 0.0); // Bottom left corner
@@ -157,12 +209,15 @@ void drawSquare(point p) {
 
 
 void drawLine(point p1, point p2){
-	glLineWidth(1.0);
+	double d = distance(p1, p2);
+	double dx = p2.x - p1.x;
+	double dy = p2.y - p1.y;
+	double dz = p2.z - p1.z;
+	glColor4f(p1.r, p1.g, p1.b, p1.a);
+	glNormal3f(dx/d, dy/d, dz/d);
 	glBegin(GL_LINES);
-	glColor3f(p1.r, p1.g, p1.b);
-	glNormal3f(p1.x, p1.y, p1.z);
-	glVertex3f(p1.x, p1.y, p1.z);
-	glVertex3f(p2.x, p2.y, p2.z);
+		glVertex3f(p1.x, p1.y, p1.z);
+		glVertex3f(p2.x, p2.y, p2.z);
 	glEnd();
 }
 
@@ -192,7 +247,7 @@ void drawText(void) {
 	} else {
 		sprintf(text1, "dt: %1.3f, FPS: %4.2f", (dt/1000.0), fps);
 	}
-	sprintf(text2, "Nbr itérations: %ld, zMin: %f, zMax: %f", iterations, floor(zMin), floor(zMax));
+	sprintf(text2, "Nbr itérations: %ld, zmin: %f, zmax: %f", iterations, floor(zmin), floor(zmax));
 	textList = glGenLists(1);
 	glNewList(textList, GL_COMPILE);
 	drawString(-40.0, -40.0, -100.0, text1);
@@ -235,7 +290,7 @@ void onReshape(int width, int height) {
 	glViewport(0, 0, width, height);
 	glMatrixMode(GL_PROJECTION);
 	glLoadIdentity();
-	gluPerspective(45.0, width/height, 1.0, 1000.0);
+	gluPerspective(45.0f, width/height, 1.0f, 1000.0f);
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 }
@@ -348,6 +403,10 @@ void onKeyboard(unsigned char key, int x, int y) {
 			rotate = !rotate;
 			printf("INFO: rotate %d\n", rotate);
 			break;
+		case 'c':
+			rotColor = !rotColor;
+			printf("INFO: rotate color %d\n", rotColor);
+			break;
 		case 'z':
 			zoom -= 5.0;
 			if (zoom < 5.0) {
@@ -394,6 +453,8 @@ void onTimer(int event) {
 
 
 void update(int value) {
+	unsigned int i=0;
+	vector temp;
 	switch (value) {
 		case 0:
 			break;
@@ -401,7 +462,13 @@ void update(int value) {
 			break;
 	}
 	if (current<iterations) {
-		current += 20;
+		current += 40;
+	}
+	if (rotColor) {
+		for (i=0; i<iterations; i++) {
+			temp = rgb2hsv(pointsList[i].r, pointsList[i].g, pointsList[i].b);
+			hsv2rgb(temp.x+0.01, 0.75, 0.9, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
+		}
 	}
 	glutPostRedisplay();
 	glutTimerFunc(dt, update, 0);
@@ -409,7 +476,7 @@ void update(int value) {
 
 
 void display(void) {
-	unsigned long i;
+	unsigned long i=0;
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	glMatrixMode(GL_MODELVIEW);
@@ -427,7 +494,7 @@ void display(void) {
 	GLfloat ambient1[] = {0.15f, 0.15f, 0.15f, 1.0f};
 	GLfloat diffuse1[] = {0.8f, 0.8f, 0.8f, 1.0f};
 	GLfloat specular1[] = {1.0f, 1.0f, 1.0f, 1.0f};
-	GLfloat position1[] = {0.0f, 0.0f, 20.0f, 1.0f};
+	GLfloat position1[] = {0.0f, 0.0f, 24.0f, 1.0f};
 	glLightfv(GL_LIGHT1, GL_AMBIENT, ambient1);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, diffuse1);
 	glLightfv(GL_LIGHT1, GL_DIFFUSE, specular1);
@@ -438,22 +505,30 @@ void display(void) {
 
 	if (animation) {
 		for (i=1; i<current; i++) {
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glLineWidth(3.0f);
 			glPushMatrix();
 			drawLine(pointsList[i-1], pointsList[i]);
 			glPopMatrix();
+			glDisable(GL_BLEND);
 		}
 		glPushMatrix();
 		drawSphere(pointsList[current]);
 		glPopMatrix();
 	} else {
 		if (iterations >= seuil) {
+			glPointSize(3.0f);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 			glEnableClientState(GL_VERTEX_ARRAY);
 			glEnableClientState(GL_COLOR_ARRAY);
 			glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
-			glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
+			glColorPointer(4, GL_FLOAT, sizeof(point), &pointsList[0].r);
 			glDrawArrays(GL_POINTS, 0, iterations);
 			glDisableClientState(GL_COLOR_ARRAY);
 			glDisableClientState(GL_VERTEX_ARRAY);
+			glDisable(GL_BLEND);
 		} else {
 			glCallList(objectList);
 		}
@@ -500,11 +575,13 @@ void init(void) {
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
 	glShadeModel(GL_SMOOTH);
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
 	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
 
 	glEnable(GL_NORMALIZE);
 	glEnable(GL_AUTO_NORMAL);
-	glDepthFunc(GL_LESS);
 
 	drawObject();
 }
@@ -528,7 +605,7 @@ void glmain(int argc, char *argv[]) {
 	glutTimerFunc(dt, update, 0);
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
 	fprintf(stdout, "INFO: FreeGLUT Version: %d\n", glutGet(GLUT_VERSION));
-	fprintf(stdout, "INFO: Min: %.02lf, Max: %.02lf\n", zMin, zMax);
+	fprintf(stdout, "INFO: Min: %.02lf, Max: %.02lf\n", zmin, zmax);
 	fprintf(stdout, "INFO: Nbr elts: %ld\n", iterations);
 	glutSetOption(GLUT_ACTION_ON_WINDOW_CLOSE, GLUT_ACTION_GLUTMAINLOOP_RETURNS);
 	glutMainLoop();
@@ -538,32 +615,28 @@ void glmain(int argc, char *argv[]) {
 }
 
 
-void hsv2rgb(double h, double s, double v, GLfloat *r, GLfloat *g, GLfloat *b) {
-	double hp = h * 6;
-	if ( hp == 6 ) hp = 0;
-	int i = floor(hp);
-	double v1 = v * (1 - s),
-		v2 = v * (1 - s * (hp - i)),
-		v3 = v * (1 - s * (1 - (hp - i)));
-	if (i == 0) { *r=v; *g=v3; *b=v1; }
-	else if (i == 1) { *r=v2; *g=v; *b=v1; }
-	else if (i == 2) { *r=v1; *g=v; *b=v3; }
-	else if (i == 3) { *r=v1; *g=v2; *b=v; }
-	else if (i == 4) { *r=v3; *g=v1; *b=v; }
-	else { *r=v; *g=v1; *b=v2; }
+void assignColor(void) {
+	unsigned long i;
+	double hue=0, dcur=0;
+
+	for (i=1; i<iterations; i++) {
+		//hue = (double)i / (double)iterations;
+		dcur = distance(pointsList[i-1], pointsList[i]);
+		hue = dcur / (dmax-dmin);
+		hsv2rgb(hue, saturation, value, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
+		pointsList[i].a = alpha;
+	}
 }
 
 
 void lorenzAttractor(void) {
 	// https://en.wikipedia.org/wiki/Lorenz_system
 	unsigned long i;
-	double hue=0, dtime=0.001, x=0, y=0, z=0;
-	double r=28.0, s=10.0, b=8.0/3.0;
+	double dtime=0.001, x=0, y=0, z=0,
+		r=28.0, s=10.0, b=8.0/3.0, dcur=0;
 	pointsList = (point*)calloc(iterations, sizeof(point));
 	decal = zoom/4.0;
 	for (i=0; i<iterations; i++) {
-		hue = (double)i / (double)iterations;
-		hsv2rgb(hue, 0.8, 0.8, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		if (i==0) {
 			pointsList[i].x = 0.1;
 			pointsList[i].y = 0.0;
@@ -575,27 +648,29 @@ void lorenzAttractor(void) {
 			pointsList[i].x = x + dtime * (s * (y-x));
 			pointsList[i].y = y + dtime * ((r*x) - y - (x*z));
 			pointsList[i].z = z + dtime * ((x*y) - (b*z));
-			if (zMax < pointsList[i].z) { zMax = pointsList[i].z; }
-			if (zMin > pointsList[i].z) { zMin = pointsList[i].z; }
+			if (zmax < pointsList[i].z) { zmax = pointsList[i].z; }
+			if (zmin > pointsList[i].z) { zmin = pointsList[i].z; }
+			dcur = distance(pointsList[i-1], pointsList[i]);
+			if (dmax < dcur) { dmax = dcur; }
+			if (dmin > dcur) { dmin = dcur; }
 		}
 	}
+	assignColor();
 }
 
 
 void thomasAttractor(void) {
 	//https://en.wikipedia.org/wiki/Thomas%27_cyclically_symmetric_attractor
 	unsigned long i;
-	double hue=0, dtime=0.001, x=0, y=0, z=0;
+	double dtime=0.001, x=0, y=0, z=0, dcur=0;
 	double b=0.1998;
 	pointsList = (point*)calloc(iterations, sizeof(point));
 	decal = 0;
 	for (i=0; i<iterations; i++) {
-		hue = (double)i / (double)iterations;
-		hsv2rgb(hue, 0.8, 0.8, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		if (i==0) {
-			pointsList[i].x = 0.1;
-			pointsList[i].y = 0.0;
-			pointsList[i].z = 0.0;
+			pointsList[i].x = 0.1f;
+			pointsList[i].y = 0.0f;
+			pointsList[i].z = 0.0f;
 		} else {
 			x = pointsList[i-1].x;
 			y = pointsList[i-1].y;
@@ -603,27 +678,29 @@ void thomasAttractor(void) {
 			pointsList[i].x = x + dtime * (sin(y) - (b*x));
 			pointsList[i].y = y + dtime * (sin(z) - (b*y));
 			pointsList[i].z = z + dtime * (sin(x) - (b*z));
-			if (zMax < pointsList[i].z) { zMax = pointsList[i].z; }
-			if (zMin > pointsList[i].z) { zMin = pointsList[i].z; }
+			if (zmax < pointsList[i].z) { zmax = pointsList[i].z; }
+			if (zmin > pointsList[i].z) { zmin = pointsList[i].z; }
+			dcur = distance(pointsList[i-1], pointsList[i]);
+			if (dmax < dcur) { dmax = dcur; }
+			if (dmin > dcur) { dmin = dcur; }
 		}
 	}
+	assignColor();
 }
 
 
 void rosslerAttractor(void) {
 	// https://en.wikipedia.org/wiki/R%C3%B6ssler_attractor
 	unsigned long i;
-	double hue=0, dtime=0.01, x=0, y=0, z=0;
+	double dtime=0.01, x=0, y=0, z=0, dcur=0;
 	double a=0.10, b=0.10, c=14.0;
 	pointsList = (point*)calloc(iterations, sizeof(point));
 	decal = zoom/4.0;
 	for (i=0; i<iterations; i++) {
-		hue = (double)i / (double)iterations;
-		hsv2rgb(hue, 0.8, 0.8, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		if (i==0) {
-			pointsList[i].x = 0.1;
-			pointsList[i].y = 0.0;
-			pointsList[i].z = 0.0;
+			pointsList[i].x = 0.1f;
+			pointsList[i].y = 0.0f;
+			pointsList[i].z = 0.0f;
 		} else {
 			x = pointsList[i-1].x;
 			y = pointsList[i-1].y;
@@ -631,26 +708,28 @@ void rosslerAttractor(void) {
 			pointsList[i].x = x + dtime * (-y -z);
 			pointsList[i].y = y + dtime * (x + (a * y));
 			pointsList[i].z = z + dtime * (b + (z * (x - c)));
-			if (zMax < pointsList[i].z) { zMax = pointsList[i].z; }
-			if (zMin > pointsList[i].z) { zMin = pointsList[i].z; }
+			if (zmax < pointsList[i].z) { zmax = pointsList[i].z; }
+			if (zmin > pointsList[i].z) { zmin = pointsList[i].z; }
+			dcur = distance(pointsList[i-1], pointsList[i]);
+			if (dmax < dcur) { dmax = dcur; }
+			if (dmin > dcur) { dmin = dcur; }
 		}
 	}
+	assignColor();
 }
 
 
 void halvorsenAttractor(void) {
 	unsigned long i;
-	double hue=0, dtime=0.001, x=0, y=0, z=0;
-	double a=1.4, b=4.0;
+	double dtime=0.001, x=0, y=0, z=0;
+	double a=1.4, b=4.0, dcur=0;
 	pointsList = (point*)calloc(iterations, sizeof(point));
 	decal = 0;
 	for (i=0; i<iterations; i++) {
-		hue = (double)i / (double)iterations;
-		hsv2rgb(hue, 0.8, 0.8, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		if (i==0) {
-			pointsList[i].x = -5.0;
-			pointsList[i].y = 0.0;
-			pointsList[i].z = 0.0;
+			pointsList[i].x = -5.0f;
+			pointsList[i].y = 0.0f;
+			pointsList[i].z = 0.0f;
 		} else {
 			x = pointsList[i-1].x;
 			y = pointsList[i-1].y;
@@ -658,26 +737,28 @@ void halvorsenAttractor(void) {
 			pointsList[i].x = x + dtime * (-(a*x) - (b*y) - (b*z) - pow(y,2));
 			pointsList[i].y = y + dtime * (-(a*y) - (b*z) - (b*x) - pow(z,2));
 			pointsList[i].z = z + dtime * (-(a*z) - (b*x) - (b*y) - pow(x,2));
-			if (zMax < pointsList[i].z) { zMax = pointsList[i].z; }
-			if (zMin > pointsList[i].z) { zMin = pointsList[i].z; }
+			if (zmax < pointsList[i].z) { zmax = pointsList[i].z; }
+			if (zmin > pointsList[i].z) { zmin = pointsList[i].z; }
+			dcur = distance(pointsList[i-1], pointsList[i]);
+			if (dmax < dcur) { dmax = dcur; }
+			if (dmin > dcur) { dmin = dcur; }
 		}
 	}
+	assignColor();
 }
 
 
 void chuaAttractor(void) {
 	unsigned long i;
-	double hue=0, dtime=0.01, x=0, y=0, z=0;
-	double c1=15.6, c2=1.0, c3=28.0, m0=-1.143, m1=-0.714, h=0.0;
+	double dtime=0.01, x=0, y=0, z=0;
+	double c1=15.6, c2=1.0, c3=28.0, m0=-1.143, m1=-0.714, h=0.0, dcur=0;
 	pointsList = (point*)calloc(iterations, sizeof(point));
 	decal = 0;
 	for (i=0; i<iterations; i++) {
-		hue = (double)i / (double)iterations;
-		hsv2rgb(hue, 0.8, 0.8, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		if (i==0) {
-			pointsList[i].x = 0.7;
-			pointsList[i].y = 0.0;
-			pointsList[i].z = 0.0;
+			pointsList[i].x = 0.7f;
+			pointsList[i].y = 0.0f;
+			pointsList[i].z = 0.0f;
 		} else {
 			h = m1*x+(m0-m1)/2*(fabs(x+1)-fabs(x-1));
 			x = pointsList[i-1].x;
@@ -686,26 +767,28 @@ void chuaAttractor(void) {
 			pointsList[i].x = x + dtime * (c1 * (y - x - h));
 			pointsList[i].y = y + dtime * (c2 * (x - y + z));
 			pointsList[i].z = z + dtime * (-c3 * y);
-			if (zMax < pointsList[i].z) { zMax = pointsList[i].z; }
-			if (zMin > pointsList[i].z) { zMin = pointsList[i].z; }
+			if (zmax < pointsList[i].z) { zmax = pointsList[i].z; }
+			if (zmin > pointsList[i].z) { zmin = pointsList[i].z; }
+			dcur = distance(pointsList[i-1], pointsList[i]);
+			if (dmax < dcur) { dmax = dcur; }
+			if (dmin > dcur) { dmin = dcur; }
 		}
 	}
+	assignColor();
 }
 
 
 void ikedaAttractor(void) {
 	unsigned long i;
-	double hue=0, dtime=0.1, x=0, y=0, z=0;
-	double a=1.0, b=0.9, c=0.4, d=3.0;
+	double dtime=0.1, x=0, y=0, z=0;
+	double a=1.0, b=0.9, c=0.4, d=3.0, dcur=0;
 	pointsList = (point*)calloc(iterations, sizeof(point));
 	decal = 0;
 	for (i=0; i<iterations; i++) {
-		hue = (double)i / (double)iterations;
-		hsv2rgb(hue, 0.8, 0.8, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
 		if (i==0) {
-			pointsList[i].x = 0.0;
-			pointsList[i].y = 0.0;
-			pointsList[i].z = 0.0;
+			pointsList[i].x = 0.0f;
+			pointsList[i].y = 0.0f;
+			pointsList[i].z = 0.0f;
 		} else {
 			x = pointsList[i-1].x;
 			y = pointsList[i-1].y;
@@ -713,18 +796,23 @@ void ikedaAttractor(void) {
 			pointsList[i].x = x + dtime * (a + b*(x*cos(z) - y*sin(z)));
 			pointsList[i].y = y + dtime * (b*(x*sin(z) + y*cos(z)));
 			pointsList[i].z = z + dtime * (c - d/(1.0+pow(x,2)+pow(y,2)));
-			if (zMax < pointsList[i].z) { zMax = pointsList[i].z; }
-			if (zMin > pointsList[i].z) { zMin = pointsList[i].z; }
+			if (zmax < pointsList[i].z) { zmax = pointsList[i].z; }
+			if (zmin > pointsList[i].z) { zmin = pointsList[i].z; }
+			dcur = distance(pointsList[i-1], pointsList[i]);
+			if (dmax < dcur) { dmax = dcur; }
+			if (dmin > dcur) { dmin = dcur; }
 		}
 	}
+	assignColor();
 }
 
 
 void launchDisplay(int argc, char *argv[]) {
 	iterations = atoi(argv[1]);
-	if (!strncmp(argv[2], "white", 5)) {
-		background = 1;
-	}
+	if (!strncmp(argv[2], "white", 5)) { background = 1; }
+	if (!strncmp(argv[4], "dynamic", 7)) { animation = 1; }
+	if (animation) { alpha = 0.6; } else { alpha = 0.2; }
+
 	if (strcmp(argv[3], "lorenz") == 0) {
 		lorenzAttractor();
 	} else if (strcmp(argv[3], "thomas") == 0) {
@@ -740,9 +828,6 @@ void launchDisplay(int argc, char *argv[]) {
 	} else {
 		usage();
 		exit(EXIT_FAILURE);
-	}
-	if (!strncmp(argv[4], "dynamic", 7)) {
-		animation = 1;
 	}
 	glmain(argc, argv);
 }

@@ -70,7 +70,8 @@ static float fps = 0.0,
 	yy = 0.0,
 	zoom = 80.0,
 	prevx = 0.0,
-	prevy = 0.0;
+	prevy = 0.0,
+	alpha = 0.2;
 
 static double pas=0.0,
 	xmin=0.0, xmax=0.0,
@@ -94,7 +95,7 @@ typedef struct _object {
 
 typedef struct _point {
 	GLfloat x, y, z;
-	GLfloat r, g, b;
+	GLfloat r, g, b, a;
 	double rx, ry, rz, rf;
 	int counter;
 } point;
@@ -430,6 +431,7 @@ void displayLandscape(void) {
 			pointsList[cpt].r = cpt / (double)iterations;
 			pointsList[cpt].g = cpt / (double)iterations;
 			pointsList[cpt].b = cpt / (double)iterations;
+			pointsList[cpt].a = alpha;
 			pointsList[cpt].x = (i * (max-min) / (double)sideLength)+min;
 			pointsList[cpt].y = (j * (max-min) / (double)sideLength)+min;
 			pointsList[cpt].z = 0.0f;
@@ -493,12 +495,14 @@ void displayLandscape(void) {
 				pointsList[cpt].r = 0.2;
 				pointsList[cpt].g = 0.2;
 				pointsList[cpt].b = 1.0;
+				pointsList[cpt].a = alpha;
 			} else {
 				pointsList[cpt].z = matrixPoint[i][j].z;
 				c = getEarthColour(pointsList[cpt].z / (maxz-limit));
 				pointsList[cpt].r = c.x;
 				pointsList[cpt].g = c.y;
 				pointsList[cpt].b = c.z;
+				pointsList[cpt].a = alpha;
 			}
 			pointsList[cpt].z -= 8.0;
 			cpt++;
@@ -558,6 +562,7 @@ void displayIFSfern(void) {
 			pointsList[val].y = pointsList[cpt].y + dy;
 			pointsList[val].z = pointsList[cpt].z;
 			hsv2rgb(hue, 0.90, pointsList[cpt].r, &pointsList[val].r, &pointsList[val].g, &pointsList[val].b);
+			pointsList[val].a = alpha;
 			cpt++;
 		}
 	}
@@ -1177,6 +1182,7 @@ void displayFlame(void) {
 					(float)flamePointList[x][y].s,
 					(float)flamePointList[x][y].v,
 					&pointsList[iter].r, &pointsList[iter].g, &pointsList[iter].b);
+				pointsList[iter].a = alpha;
 				pointsList[iter].x = (x - (sideLength/2)) / (sideLength/50.0);
 				pointsList[iter].y = 0.0;
 				pointsList[iter].z = (y - (sideLength/2)) / (sideLength/50.0);
@@ -1302,6 +1308,7 @@ void displayMandelbulb(void) {
 				hue = 0.0;
 			}
 			hsv2rgb(hue, 0.75, 0.9, &(pointsList[i].r), &(pointsList[i].g), &(pointsList[i].b));
+			pointsList[i].a = alpha;
 
 			pointsList[i].x = x * 8.0;
 			pointsList[i].y = y * 8.0;
@@ -2194,15 +2201,20 @@ void display(void) {
 		glDisable(GL_TEXTURE_2D);
 		drawWindow(winPosx, winPosy);
 	} else if (flame || mandelbulb || ifs || landscape) {
+		if (flame) { glPointSize(1.0f); }
+		else { glPointSize(3.0f); }
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
-		glColorPointer(3, GL_FLOAT, sizeof(point), &pointsList[0].r);
+		glColorPointer(4, GL_FLOAT, sizeof(point), &pointsList[0].r);
 		if (flame || mandelbulb) { glDrawArrays(GL_POINTS, 0, iterations); }
 		if (landscape) { glDrawArrays(GL_POINTS, 0, iterations); }
 		if (ifs) { glDrawArrays(GL_POINTS, 0, iterations*nbrIfs); }
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
+		glDisable(GL_BLEND);
 	} else if (flame3d) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
@@ -2272,13 +2284,14 @@ void init(void) {
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
 	glShadeModel(GL_SMOOTH);
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
 	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
 
 	glEnable(GL_NORMALIZE);
 	glEnable(GL_AUTO_NORMAL);
-	glDepthFunc(GL_LESS);
 
-	glDisable(GL_CULL_FACE);
 	if (planet) {
 		assignTexture();
 		drawObjects();
@@ -2355,9 +2368,10 @@ void launchDisplay(int argc, char *argv[]) {
 		displayFractal();
 	}
 	if (mandelbulb) {
+		alpha=1.0;
 		power=5;
 		xmin=-1.20; xmax=1.20;
-		sideLength = 180;
+		sideLength = 150;
 		iterations = sideLength * sideLength * sideLength;
 		maxIter = 20;
 		pas = (xmax-xmin)/(float)sideLength;
@@ -2381,6 +2395,7 @@ void launchDisplay(int argc, char *argv[]) {
 		displaySierpinski();
 	}
 	if (flame || flame3d) {
+		alpha = 1.0;
 		blurRadius = 1;
 		numOfFlameFunct = 16;
 		if (flame) { sideLength = 1200; }
@@ -2395,7 +2410,8 @@ void launchDisplay(int argc, char *argv[]) {
 		displayFlame();
 	}
 	if (ifs) {
-		nbrIfs = 10;
+		alpha = 0.5;
+		nbrIfs = 20;
 		iterations = 100000;
 		pointsList = (point*)calloc(iterations*nbrIfs, sizeof(point));
 		displayIFSfern();
@@ -2409,7 +2425,8 @@ void launchDisplay(int argc, char *argv[]) {
 		displayPlanet();
 	}
 	if (landscape) {
-		sideLength = 1200;
+		alpha = 0.4;
+		sideLength = 1400;
 		blurRadius = 4;
 		maxIter = 1000;
 		iterations = sideLength * sideLength;
