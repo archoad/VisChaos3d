@@ -54,6 +54,7 @@ static float fps = 0.0,
 	prevx = 0.0, prevy = 0.0,
 	saturation = 0.8, value = 0.8,
 	alpha = 0.0,
+	pSize = 0.0,
 	sphereRadius = 0.4,
 	squareWidth = 0.055;
 
@@ -180,7 +181,7 @@ void hsv2rgb(double h, double s, double v, GLfloat *r, GLfloat *g, GLfloat *b) {
 
 
 void drawPoint(point p) {
-	glPointSize(1.0);
+	glPointSize(pSize);
 	glColor4f(p.r, p.g, p.b, p.a);
 	glBegin(GL_POINTS);
 	glNormal3f(p.x, p.y, p.z);
@@ -213,6 +214,7 @@ void drawLine(point p1, point p2){
 	double dx = p2.x - p1.x;
 	double dy = p2.y - p1.y;
 	double dz = p2.z - p1.z;
+	glLineWidth(pSize);
 	glColor4f(p1.r, p1.g, p1.b, p1.a);
 	glNormal3f(dx/d, dy/d, dz/d);
 	glBegin(GL_LINES);
@@ -225,7 +227,7 @@ void drawLine(point p1, point p2){
 void drawString(float x, float y, float z, char *text) {
 	unsigned i = 0;
 	glPushMatrix();
-	glLineWidth(1.0);
+	glLineWidth(1.0f);
 	if (background){ // White background
 		glColor3f(0.0, 0.0, 0.0);
 	} else { // Black background
@@ -366,6 +368,7 @@ void onMouse(int button, int state, int x, int y) {
 
 
 void onKeyboard(unsigned char key, int x, int y) {
+	unsigned long i = 0;
 	char *name = malloc(20 * sizeof(char));
 	switch (key) {
 		case 27: // Escape
@@ -391,13 +394,26 @@ void onKeyboard(unsigned char key, int x, int y) {
 			break;
 		case 'f':
 			fullScreen = !fullScreen;
+			printf("INFO: fullscreen %d\n", fullScreen);
 			if (fullScreen) {
 				glutFullScreen();
 			} else {
+				glutPositionWindow(120,10);
 				glutReshapeWindow(winSizeW, winSizeH);
-				glutPositionWindow(100,100);
-				printf("INFO: fullscreen %d\n", fullScreen);
 			}
+			break;
+		case 'a':
+			alpha -= 0.05;
+			if (alpha <= 0) { alpha = 1.0; }
+			for (i=0; i<iterations; i++) {
+				pointsList[i].a = alpha;
+			}
+			printf("INFO: alpha channel %f\n", alpha);
+			break;
+		case 's':
+			pSize += 1.0;
+			if (pSize >= 20) { pSize = 0.5; }
+			printf("INFO: point size %f\n", pSize);
 			break;
 		case 'r':
 			rotate = !rotate;
@@ -478,7 +494,6 @@ void update(int value) {
 void display(void) {
 	unsigned long i=0;
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
@@ -502,25 +517,19 @@ void display(void) {
 	glEnable(GL_LIGHT1);
 
 	drawAxes();
-
 	if (animation) {
 		for (i=1; i<current; i++) {
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			glLineWidth(3.0f);
+			glLineWidth(pSize);
 			glPushMatrix();
 			drawLine(pointsList[i-1], pointsList[i]);
 			glPopMatrix();
-			glDisable(GL_BLEND);
 		}
 		glPushMatrix();
 		drawSphere(pointsList[current]);
 		glPopMatrix();
 	} else {
 		if (iterations >= seuil) {
-			glPointSize(3.0f);
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			glPointSize(pSize);
 			glEnableClientState(GL_VERTEX_ARRAY);
 			glEnableClientState(GL_COLOR_ARRAY);
 			glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
@@ -528,7 +537,6 @@ void display(void) {
 			glDrawArrays(GL_POINTS, 0, iterations);
 			glDisableClientState(GL_COLOR_ARRAY);
 			glDisableClientState(GL_VERTEX_ARRAY);
-			glDisable(GL_BLEND);
 		} else {
 			glCallList(objectList);
 		}
@@ -574,14 +582,21 @@ void init(void) {
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, baseAmbient);
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
-	glShadeModel(GL_SMOOTH);
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK);
+	// points smoothing
+	glEnable(GL_POINT_SMOOTH);
+	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+
+	//needed for transparency
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	glEnable(GL_NORMALIZE);
+	glShadeModel(GL_SMOOTH); // smooth shading
+	glEnable(GL_NORMALIZE); // recalc normals for non-uniform scaling
 	glEnable(GL_AUTO_NORMAL);
+
+	glEnable(GL_CULL_FACE); // do not render back-faces, faster
 
 	drawObject();
 }
@@ -593,7 +608,6 @@ void glmain(int argc, char *argv[]) {
 	glutInitWindowSize(winSizeW, winSizeH);
 	glutInitWindowPosition(120, 10);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
-	init();
 	glutDisplayFunc(display);
 	glutReshapeFunc(onReshape);
 	glutSpecialFunc(onSpecial);
@@ -603,6 +617,7 @@ void glmain(int argc, char *argv[]) {
 	glutKeyboardFunc(onKeyboard);
 	glutTimerFunc(dt, onTimer, 0);
 	glutTimerFunc(dt, update, 0);
+	init();
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
 	fprintf(stdout, "INFO: FreeGLUT Version: %d\n", glutGet(GLUT_VERSION));
 	fprintf(stdout, "INFO: Min: %.02lf, Max: %.02lf\n", zmin, zmax);
@@ -811,7 +826,8 @@ void launchDisplay(int argc, char *argv[]) {
 	iterations = atoi(argv[1]);
 	if (!strncmp(argv[2], "white", 5)) { background = 1; }
 	if (!strncmp(argv[4], "dynamic", 7)) { animation = 1; }
-	if (animation) { alpha = 0.6; } else { alpha = 0.2; }
+	alpha = 1.0f;
+	pSize = 1.0f;
 
 	if (strcmp(argv[3], "lorenz") == 0) {
 		lorenzAttractor();

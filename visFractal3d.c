@@ -71,7 +71,8 @@ static float fps = 0.0,
 	zoom = 80.0,
 	prevx = 0.0,
 	prevy = 0.0,
-	alpha = 0.2;
+	alpha = 0.0,
+	pSize = 0.0;
 
 static double pas=0.0,
 	xmin=0.0, xmax=0.0,
@@ -1330,7 +1331,7 @@ void displayMandelbulb(void) {
 
 void drawCube(vector pos, vector color, double size) {
 	float dim = size * 0.5;
-	glLineWidth(1.0);
+	glLineWidth(1.0f);
 	glTranslatef(pos.x, pos.y, pos.z);
 	glColor3f(color.x, color.y, color.z);
 
@@ -1371,7 +1372,7 @@ void drawCube(vector pos, vector color, double size) {
 
 void drawPyramid(vector pos, vector color, double size) {
 	float dim = size * 0.5;
-	glLineWidth(1.0);
+	glLineWidth(pSize);
 	glTranslatef(pos.x, pos.y, pos.z);
 	glColor3f(color.x, color.y, color.z);
 
@@ -1794,7 +1795,7 @@ void displayPlanet(void) {
 
 
 void drawBox(vector pos, vector color, float height, float width, float thickness) {
-	glLineWidth(1.0);
+	glLineWidth(1.0f);
 	glTranslatef(pos.x, pos.y, pos.z);
 	glColor3f(color.x, color.y, color.z);
 
@@ -1853,7 +1854,7 @@ void drawAxes(void) {
 	} else if (flame3d) {
 		drawBox(pos, color, height, width, thickness*4);
 	} else {
-		glLineWidth(1.0);
+		glLineWidth(1.0f);
 		glTranslatef(0.0, 0.0, 0.0);
 		glColor3f(0.8, 0.8, 0.8);
 		glutWireCube(100.0 * 0.33);
@@ -1952,6 +1953,7 @@ void onMouse(int button, int state, int x, int y) {
 
 
 void onKeyboard(unsigned char key, int x, int y) {
+	unsigned long i=0, newIter=0;
 	char *name = malloc(20 * sizeof(char));
 	switch (key) {
 		case 27: // Escape
@@ -2020,23 +2022,6 @@ void onKeyboard(unsigned char key, int x, int y) {
 				rotJulia = !rotJulia;
 				printf("INFO: rotate Julia %d\n", rotJulia);
 			}
-			if (flame || flame3d) {
-				blurRadius = 1;
-				free(flameFuncList);
-				flameFuncList = (flameFunction*)calloc(numOfFlameFunct, sizeof(flameFunction));
-				initFlameFunction();
-				computeFlame();
-				displayFlame();
-			}
-			break;
-		case 's':
-			if (mandelbrot || julia) {
-				saturation = 1 - saturation;
-				printf("INFO: saturation color %d\n", saturation);
-				displayFractal();
-			}
-			break;
-		case 'a':
 			if (menger) {
 				mengerDepth += 1;
 				if (mengerDepth == 6) { mengerDepth = 1; }
@@ -2056,6 +2041,37 @@ void onKeyboard(unsigned char key, int x, int y) {
 				free(pyramidList);
 				pyramidList = (object*)calloc(sierpinskiIter, sizeof(object));
 				displaySierpinski();
+			}
+			if (flame || flame3d) {
+				blurRadius = 1;
+				free(flameFuncList);
+				flameFuncList = (flameFunction*)calloc(numOfFlameFunct, sizeof(flameFunction));
+				initFlameFunction();
+				computeFlame();
+				displayFlame();
+			}
+			break;
+		case 's':
+			if (mandelbrot || julia) {
+				saturation = 1 - saturation;
+				printf("INFO: saturation color %d\n", saturation);
+				displayFractal();
+			} else if (!flame) {
+				pSize += 1.0;
+				if (pSize >= 20) { pSize = 0.5; }
+				printf("INFO: point size %f\n", pSize);
+			}
+			break;
+		case 'a':
+			if (!flame) {
+				alpha -= 0.05;
+				if (alpha <= 0) { alpha = 1.0; }
+				if (ifs) { newIter = iterations*nbrIfs; }
+				else { newIter = iterations; }
+				for (i=0; i<newIter; i++) {
+					pointsList[i].a = alpha;
+				}
+				printf("INFO: alpha channel %f\n", alpha);
 			}
 			break;
 		case 'z':
@@ -2159,7 +2175,6 @@ void display(void) {
 	int i = 0;
 	unsigned long j = 0;
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
@@ -2183,7 +2198,6 @@ void display(void) {
 	glEnable(GL_LIGHT1);
 
 	drawAxes();
-
 	if (mandelbrot || julia) {
 		glEnable(GL_TEXTURE_2D);
 		glGenTextures(1, &textureID);
@@ -2201,20 +2215,17 @@ void display(void) {
 		glDisable(GL_TEXTURE_2D);
 		drawWindow(winPosx, winPosy);
 	} else if (flame || mandelbulb || ifs || landscape) {
-		if (flame) { glPointSize(1.0f); }
-		else { glPointSize(3.0f); }
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glPointSize(pSize);
+		if (flame || mandelbulb || landscape) { glDisable(GL_POINT_SMOOTH); }
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
 		glVertexPointer(3, GL_FLOAT, sizeof(point), pointsList);
 		glColorPointer(4, GL_FLOAT, sizeof(point), &pointsList[0].r);
-		if (flame || mandelbulb) { glDrawArrays(GL_POINTS, 0, iterations); }
-		if (landscape) { glDrawArrays(GL_POINTS, 0, iterations); }
+		if (flame || mandelbulb || landscape) { glDrawArrays(GL_POINTS, 0, iterations); }
 		if (ifs) { glDrawArrays(GL_POINTS, 0, iterations*nbrIfs); }
 		glDisableClientState(GL_COLOR_ARRAY);
 		glDisableClientState(GL_VERTEX_ARRAY);
-		glDisable(GL_BLEND);
+		if (flame || mandelbulb || landscape) { glEnable(GL_POINT_SMOOTH); }
 	} else if (flame3d) {
 		glEnableClientState(GL_VERTEX_ARRAY);
 		glEnableClientState(GL_COLOR_ARRAY);
@@ -2228,11 +2239,13 @@ void display(void) {
 		for (j=0; j<iterations; j++) { glCallList(objectList+j); }
 		glPopMatrix();
 	} else if (menger) {
+		glDisable(GL_CULL_FACE);
 		for (i=0; i<mengerIter; i++) {
 			glPushMatrix();
 			drawCube(cubeList[i].pos, cubeList[i].color, cubeList[i].size);
 			glPopMatrix();
 		}
+		glEnable(GL_CULL_FACE);
 	} else if (sierpinski) {
 		for (i=0; i<sierpinskiIter; i++) {
 			glPushMatrix();
@@ -2283,14 +2296,21 @@ void init(void) {
 	glLightModelfv(GL_LIGHT_MODEL_AMBIENT, baseAmbient);
 	glLightModeli(GL_LIGHT_MODEL_LOCAL_VIEWER, GL_TRUE);
 
-	glShadeModel(GL_SMOOTH);
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK);
+	// points smoothing
+	glEnable(GL_POINT_SMOOTH);
+	glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+
+	//needed for transparency
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	glEnable(GL_NORMALIZE);
+	glShadeModel(GL_SMOOTH); // smooth shading
+	glEnable(GL_NORMALIZE); // recalc normals for non-uniform scaling
 	glEnable(GL_AUTO_NORMAL);
+
+	glEnable(GL_CULL_FACE); // do not render back-faces, faster
 
 	if (planet) {
 		assignTexture();
@@ -2305,7 +2325,6 @@ void glmain(int argc, char *argv[]) {
 	glutInitWindowSize(winSizeW, winSizeH);
 	glutInitWindowPosition(120, 10);
 	glutCreateWindow(WINDOW_TITLE_PREFIX);
-	init();
 	glutDisplayFunc(display);
 	glutReshapeFunc(onReshape);
 	glutSpecialFunc(onSpecial);
@@ -2315,6 +2334,7 @@ void glmain(int argc, char *argv[]) {
 	glutKeyboardFunc(onKeyboard);
 	glutTimerFunc(dt, onTimer, 0);
 	glutTimerFunc(dt, update, 0);
+	init();
 	fprintf(stdout, "INFO: OpenGL Version: %s\n", glGetString(GL_VERSION));
 	fprintf(stdout, "INFO: FreeGLUT Version: %d\n", glutGet(GLUT_VERSION));
 	if (menger) {
@@ -2339,9 +2359,9 @@ void glmain(int argc, char *argv[]) {
 
 void launchDisplay(int argc, char *argv[]) {
 	srand(time(NULL));
-	if (!strncmp(argv[2], "white", 5)) {
-		background = 1;
-	}
+	if (!strncmp(argv[2], "white", 5)) { background = 1; }
+	alpha = 1.0f;
+	pSize = 1.0f;
 	if (strcmp(argv[1], "mandelbrot") == 0) { mandelbrot=1; }
 	else if (strcmp(argv[1], "julia") == 0) { julia=1; }
 	else if (strcmp(argv[1], "mandelbulb") == 0) { mandelbulb=1; }
@@ -2368,7 +2388,6 @@ void launchDisplay(int argc, char *argv[]) {
 		displayFractal();
 	}
 	if (mandelbulb) {
-		alpha=1.0;
 		power=5;
 		xmin=-1.20; xmax=1.20;
 		sideLength = 150;
@@ -2395,7 +2414,6 @@ void launchDisplay(int argc, char *argv[]) {
 		displaySierpinski();
 	}
 	if (flame || flame3d) {
-		alpha = 1.0;
 		blurRadius = 1;
 		numOfFlameFunct = 16;
 		if (flame) { sideLength = 1200; }
@@ -2410,7 +2428,6 @@ void launchDisplay(int argc, char *argv[]) {
 		displayFlame();
 	}
 	if (ifs) {
-		alpha = 0.5;
 		nbrIfs = 20;
 		iterations = 100000;
 		pointsList = (point*)calloc(iterations*nbrIfs, sizeof(point));
@@ -2425,7 +2442,6 @@ void launchDisplay(int argc, char *argv[]) {
 		displayPlanet();
 	}
 	if (landscape) {
-		alpha = 0.4;
 		sideLength = 1400;
 		blurRadius = 4;
 		maxIter = 1000;
